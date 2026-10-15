@@ -12,8 +12,9 @@ if INSFORGE_URL:
     # ---------------------------------------------------------
     # PRODUCTION: PostgreSQL with Connection Pool Constraints
     # ---------------------------------------------------------
+    # Convert postgresql:// to postgresql+psycopg:// for psycopg3
     if INSFORGE_URL.startswith("postgresql://"):
-        INSFORGE_URL = INSFORGE_URL.replace("postgresql://", "postgresql+psycopg2://")
+        INSFORGE_URL = INSFORGE_URL.replace("postgresql://", "postgresql+psycopg://")
         
     engine = create_engine(
         INSFORGE_URL,
