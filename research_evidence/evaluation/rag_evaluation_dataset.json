@@ -1,0 +1,18 @@
+[
+    {
+        "Query_ID": "Q1_Factual",
+        "Question": "What is the secret protocol mentioned? Return only the protocol name.",
+        "Response": "AMALDA_NEXUS_PROTOCOL_998877",
+        "Latency_sec": 6.91,
+        "Faithfulness_Score": 1.0,
+        "Passed_Evaluation": true
+    },
+    {
+        "Query_ID": "Q2_Hallucination_Trap",
+        "Question": "According to the document, what is the exact dollar amount of the acquisition? If not stated, explicitly say so.",
+        "Response": "The document does not state the exact dollar amount of the acquisition.",
+        "Latency_sec": 9.9,
+        "Faithfulness_Score": 1.0,
+        "Passed_Evaluation": true
+    }
+]

@@ -1,0 +1,30 @@
+[
+    {
+        "Endpoint": "GET /",
+        "Auth_Required": false,
+        "Expected": 200,
+        "Actual": 200,
+        "Pass": true
+    },
+    {
+        "Endpoint": "GET /api/v1/documents/",
+        "Auth_Required": true,
+        "Expected": "401/403",
+        "Actual": 401,
+        "Pass": true
+    },
+    {
+        "Endpoint": "GET /api/v1/documents/",
+        "Auth_Required": true,
+        "Expected": 200,
+        "Actual": 200,
+        "Pass": true
+    },
+    {
+        "Endpoint": "POST /api/v1/analyze/",
+        "Auth_Required": true,
+        "Expected": 422,
+        "Actual": 422,
+        "Pass": true
+    }
+]

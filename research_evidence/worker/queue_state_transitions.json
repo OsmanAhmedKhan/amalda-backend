@@ -1,0 +1,7 @@
+{
+    "document": "amalda_retrieval_test.txt",
+    "states_observed": [
+        "PENDING",
+        "COMPLETED"
+    ]
+}

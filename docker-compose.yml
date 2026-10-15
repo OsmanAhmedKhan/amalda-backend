@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  amalda-api:
+    build: .
+    container_name: amalda_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Mount data and logs to persist state outside the container
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped

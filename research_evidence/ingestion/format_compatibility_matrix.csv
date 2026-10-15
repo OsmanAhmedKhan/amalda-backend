@@ -1,0 +1,10 @@
+Format,Upload,Extracted,Chunks
+PDF (Text),PASS,True,1
+PDF (Image),PASS,True,1
+DOCX,PASS,True,1
+XLSX,PASS,True,1
+PPTX,PASS,True,1
+JPG,PASS,True,1
+PNG,PASS,True,1
+TIFF,PASS,True,1
+DOC (Legacy),PASS,True,1

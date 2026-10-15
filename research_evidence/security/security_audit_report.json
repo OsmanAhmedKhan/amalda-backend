@@ -1,0 +1,17 @@
+[
+    {
+        "Vector": "Path Traversal (../../../)",
+        "HTTP_Status": 200,
+        "Mitigated": true
+    },
+    {
+        "Vector": "MIME/Extension Spoofing",
+        "HTTP_Status": 200,
+        "Mitigated": false
+    },
+    {
+        "Vector": "Oversized Payload (11MB)",
+        "HTTP_Status": 413,
+        "Mitigated": true
+    }
+]

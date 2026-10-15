@@ -1,0 +1,37 @@
+PROPRIETARY LICENSE — ALL RIGHTS RESERVED
+
+Copyright (c) 2026 Osman Ahmed Khan (https://osmankhan.pages.dev)
+All rights reserved.
+
+1. OWNERSHIP OF INTELLECTUAL PROPERTY
+This software, including but not limited to all source code, Python modules, 
+FastAPI routing, LangGraph orchestrations, database schemas, retrieval algorithms, 
+system architecture configurations, documentation, and research assets, is the sole 
+and exclusive property of Osman Ahmed Khan, protected by Indian and international 
+copyright laws and treaties.
+
+2. LIMITED RIGHT OF INSPECTION
+Access to this repository is granted strictly for the purpose of read-only code 
+inspection, technical verification, and professional evaluation by prospective 
+employers, clients, and engineering peers.
+
+3. STRICT PROHIBITIONS
+Without the prior written consent of Osman Ahmed Khan, you may NOT:
+  (a) Copy, clone, fork, or duplicate this repository for the purpose of
+      deploying a personal, commercial, or derivative application;
+  (b) Modify, adapt, translate, reverse-engineer, or create derivative works
+      based upon any part of the source code, multi-agent architecture, or 
+      system infrastructure;
+  (c) Distribute, sublicense, publish, sell, lease, or convert this repository
+      into a public or commercial template;
+  (d) Remove, alter, or obscure any copyright notices, author attributions, or
+      proprietary markings contained within the source files.
+
+4. ENFORCEMENT
+Any unauthorized use, reproduction, or deployment of this software or its 
+architectural design constitutes copyright infringement and will be subject to 
+immediate legal proceedings, DMCA takedown notices, and applicable legal remedies.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.

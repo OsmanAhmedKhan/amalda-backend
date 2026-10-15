@@ -1,0 +1,441 @@
+Run started:2026-10-15 06:30:04.490073+00:00
+
+Test results:
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'trust_gate'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: app/agents\graph.py:240:12
+239	            "trust_gate": "trust_gate",
+240	            "pass": "trust_gate" # All paths funnel through the Trust Gate before ending
+241	        }
+242	    )
+243	    
+244	    workflow.add_edge("trust_gate", END) # The graph always securely terminates here
+245	    
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: app/core\llm_gateway.py:284:28
+283	                                backoff = float(e.response.headers["retry-after"])
+284	                            except Exception:
+285	                                pass
+286	                        engine.cooldown_until = time.time() + backoff
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:25:8
+24	        response = client.post("/api/v1/analyze/", json={"query": "Test question?"})
+25	        assert response.status_code in [401, 403], f"Expected 401/403, got {response.status_code}"
+26	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:35:8
+34	        )
+35	        assert response.status_code in [401, 403], f"Expected 401/403, got {response.status_code}"
+36	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:56:8
+55	        )
+56	        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+57	        
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:59:8
+58	        data = response.json()
+59	        assert "final_verdict" in data or "response" in data, "Schema must contain answer output"
+60	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:69:8
+68	        )
+69	        assert response.status_code == 422
+70	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_api.py:89:8
+88	
+89	        assert 429 in status_codes, f"Rate limiter did not trigger. Codes received: {status_codes}"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_db.py:33:8
+32	        db.commit()
+33	        assert False, "Should have raised IntegrityError"
+34	    except IntegrityError:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_db.py:39:4
+38	    count = db.query(TestDocumentRecord).filter_by(filename=unique_file).count()
+39	    assert count == 1, "Rollback failed: partial transaction persisted."
+40	    
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_gateway.py:22:8
+21	        err_msg = str(e)
+22	        assert "Gateway Fatal" in err_msg or "Max attempts" in err_msg or "exhausted" in err_msg
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_llm_providers.py:15:4
+14	    api_key = os.getenv("GROQ_API_KEY")
+15	    assert api_key, "GROQ_API_KEY is missing from environment variables."
+16	    
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_llm_providers.py:21:4
+20	    models_response = client.models.list()
+21	    assert models_response.data, "No models available for this API key."
+22	    
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_llm_providers.py:38:4
+37	    
+38	    assert response is not None
+39	    assert len(response.choices) > 0
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_llm_providers.py:39:4
+38	    assert response is not None
+39	    assert len(response.choices) > 0
+40	    assert "pong" in response.choices[0].message.content.strip().lower()
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_llm_providers.py:40:4
+39	    assert len(response.choices) > 0
+40	    assert "pong" in response.choices[0].message.content.strip().lower()
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pdf.py:7:4
+6	    pdf_path = os.path.join(os.getenv("UPLOAD_DIR", "./data/uploads"), "EMPLOYMENT-AGREEMENT.pdf")
+7	    assert os.path.exists(pdf_path), "Target PDF missing"
+8	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pdf.py:10:4
+9	    doc = fitz.open(pdf_path)
+10	    assert doc.page_count > 0, "PDF is empty"
+11	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pdf.py:17:4
+16	    # Assert meaningful extraction based on the Golden Dataset ground truth
+17	    assert "Base Compensation" in full_text or "$175,000" in full_text, "Failed to extract core financial terms from PDF."
+18	    assert "Texas" in full_text, "Failed to extract governing law jurisdiction."
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pdf.py:18:4
+17	    assert "Base Compensation" in full_text or "$175,000" in full_text, "Failed to extract core financial terms from PDF."
+18	    assert "Texas" in full_text, "Failed to extract governing law jurisdiction."
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pipeline.py:31:4
+30	    vd = VectorDatabase()
+31	    assert hasattr(vd, "index_document") and hasattr(vd, "search"), "Vector store lacks the expected index_document/search methods."
+32	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_pipeline.py:50:8
+49	
+50	        assert status_val == "PENDING", f"DocumentRecord was not reset to PENDING. Current status: {status_val}"
+51	    finally:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_postgres.py:24:12
+23	            result = conn.execute(text("SELECT current_database(), version();")).fetchone()
+24	            assert result is not None
+25	            assert "insforge" in result[0] or "postgres" in result[0].lower()
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_postgres.py:25:12
+24	            assert result is not None
+25	            assert "insforge" in result[0] or "postgres" in result[0].lower()
+26	            assert "PostgreSQL" in result[1]
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_postgres.py:26:12
+25	            assert "insforge" in result[0] or "postgres" in result[0].lower()
+26	            assert "PostgreSQL" in result[1]
+27	    except Exception as e:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:15:4
+14	    doc = registry.extract(str(txt_file), "sample.txt")
+15	    assert doc.filename == "sample.txt"
+16	    assert len(doc.nodes) > 0
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:16:4
+15	    assert doc.filename == "sample.txt"
+16	    assert len(doc.nodes) > 0
+17	    assert "standard text clause" in doc.nodes[0].text
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:17:4
+16	    assert len(doc.nodes) > 0
+17	    assert "standard text clause" in doc.nodes[0].text
+18	    assert doc.nodes[0].metadata["format"] == "text"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:18:4
+17	    assert "standard text clause" in doc.nodes[0].text
+18	    assert doc.nodes[0].metadata["format"] == "text"
+19	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:33:4
+32	    # Assert Tesseract OCR engine successfully ran
+33	    assert len(doc.nodes) > 0
+34	    # Allow for slight OCR noise/casing variations
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:35:4
+34	    # Allow for slight OCR noise/casing variations
+35	    assert "INVOICE" in doc.nodes[0].text.upper() or "500" in doc.nodes[0].text
+36	    assert doc.nodes[0].metadata["format"] == "image"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase1.py:36:4
+35	    assert "INVOICE" in doc.nodes[0].text.upper() or "500" in doc.nodes[0].text
+36	    assert doc.nodes[0].metadata["format"] == "image"
+37	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:22:4
+21	    extracted = registry.extract(str(docx_file), "contract.docx")
+22	    assert len(extracted.nodes) > 0
+23	    assert "strict liability clause" in extracted.nodes[0].text
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:23:4
+22	    assert len(extracted.nodes) > 0
+23	    assert "strict liability clause" in extracted.nodes[0].text
+24	    assert "Fee | $5,000" in extracted.nodes[0].text
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:24:4
+23	    assert "strict liability clause" in extracted.nodes[0].text
+24	    assert "Fee | $5,000" in extracted.nodes[0].text
+25	    assert extracted.nodes[0].metadata["format"] == "docx"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:25:4
+24	    assert "Fee | $5,000" in extracted.nodes[0].text
+25	    assert extracted.nodes[0].metadata["format"] == "docx"
+26	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:36:4
+35	    extracted = registry.extract(str(xlsx_file), "financials.xlsx")
+36	    assert len(extracted.nodes) > 0
+37	    assert "Revenue | 150000" in extracted.nodes[0].text
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:37:4
+36	    assert len(extracted.nodes) > 0
+37	    assert "Revenue | 150000" in extracted.nodes[0].text
+38	    assert extracted.nodes[0].metadata["page_label"] == "Sheet: Q3_Earnings"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:38:4
+37	    assert "Revenue | 150000" in extracted.nodes[0].text
+38	    assert extracted.nodes[0].metadata["page_label"] == "Sheet: Q3_Earnings"
+39	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:48:4
+47	    extracted = registry.extract(str(pptx_file), "deck.pptx")
+48	    assert len(extracted.nodes) > 0
+49	    assert "Acquisition Strategy" in extracted.nodes[0].text
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:49:4
+48	    assert len(extracted.nodes) > 0
+49	    assert "Acquisition Strategy" in extracted.nodes[0].text
+50	    assert extracted.nodes[0].metadata["page_label"] == "Slide 1"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app/tests\test_registry_phase2.py:50:4
+49	    assert "Acquisition Strategy" in extracted.nodes[0].text
+50	    assert extracted.nodes[0].metadata["page_label"] == "Slide 1"
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 2117
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 42
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 1
+		High: 41
+Files skipped (0):

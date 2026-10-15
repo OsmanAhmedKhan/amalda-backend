@@ -1,0 +1,77 @@
+graph TD
+    %% AMALDA System Architecture Diagram
+    
+    Client([Client / Frontend])
+    
+    subgraph FastAPI Gateway
+        Auth{API Key Auth}
+        RateLimit[SlowAPI Limiter]
+        UploadRoute[POST /upload]
+        AnalyzeRoute[POST /analyze]
+        StreamRoute[POST /analyze/stream]
+    end
+    
+    subgraph Security & Validation
+        MimeSniff[secure_mime_sniff & ZIP Structural Check]
+    end
+    
+    subgraph Persistence & State
+        InsForgeDB[(InsForge PostgreSQL / SQLite)]
+        DocumentRecord[DocumentRecord Table]
+    end
+    
+    subgraph Background Processing
+        WorkerQueue((Atomic Task Worker))
+        ExtractorRegistry{Extractor Registry}
+        Parsers[PDF, DOCX, XLSX, PPTX, Image, Text]
+        OCR[Tesseract OCR Fallback]
+        Chunker[Recursive Semantic Chunking]
+    end
+    
+    subgraph Vector Retrieval Engine
+        Embeddings[all-MiniLM-L6-v2]
+        ChromaDB[(ChromaDB Vector Store)]
+    end
+    
+    subgraph LangGraph Multi-Agent Core
+        RetrieverNode[Context Retrieval]
+        ClauseAgent[Clause Analysis Agent]
+        RiskAgent[Risk Evaluation Agent]
+        JudgeAgent[Judicial Synthesizer]
+        VerifierAgent{Hallucination Verifier}
+    end
+    
+    subgraph External LLM Providers
+        LLM[Groq / Gemini / OpenRouter / Cloudflare]
+    end
+
+    %% Flow - Upload
+    Client --> RateLimit
+    RateLimit --> Auth
+    Auth --> UploadRoute
+    UploadRoute --> MimeSniff
+    MimeSniff -- Approved --> DocumentRecord
+    DocumentRecord -- PENDING --> WorkerQueue
+    WorkerQueue --> ExtractorRegistry
+    ExtractorRegistry --> Parsers
+    Parsers -- Image/No-Text --> OCR
+    Parsers --> Chunker
+    OCR --> Chunker
+    Chunker --> Embeddings
+    Embeddings --> ChromaDB
+    WorkerQueue -- COMPLETED --> DocumentRecord
+
+    %% Flow - Analysis
+    Auth --> AnalyzeRoute & StreamRoute
+    AnalyzeRoute & StreamRoute --> RetrieverNode
+    RetrieverNode --> ChromaDB
+    ChromaDB --> RetrieverNode
+    RetrieverNode --> ClauseAgent
+    ClauseAgent --> RiskAgent
+    RiskAgent --> JudgeAgent
+    JudgeAgent --> VerifierAgent
+    VerifierAgent -- "Fail (Recursion < 12)" --> JudgeAgent
+    VerifierAgent -- Pass --> Client
+    
+    %% LLM Connection
+    ClauseAgent & RiskAgent & JudgeAgent & VerifierAgent -.-> LLM

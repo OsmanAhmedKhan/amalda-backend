@@ -1,0 +1,19 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.pytest_cache/
+
+# Local Data and Logs (we mount these externally)
+data/
+logs/
+alembic/versions/*.pyc
+
+# Secrets
+.env

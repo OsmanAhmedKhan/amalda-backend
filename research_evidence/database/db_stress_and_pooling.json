@@ -1,0 +1,131 @@
+{
+    "total_requests": 25,
+    "successful": 25,
+    "results": [
+        {
+            "id": 9,
+            "status": 200,
+            "latency_ms": 538.16
+        },
+        {
+            "id": 0,
+            "status": 200,
+            "latency_ms": 3490.64
+        },
+        {
+            "id": 2,
+            "status": 200,
+            "latency_ms": 4647.12
+        },
+        {
+            "id": 3,
+            "status": 200,
+            "latency_ms": 4847.1
+        },
+        {
+            "id": 1,
+            "status": 200,
+            "latency_ms": 5044.69
+        },
+        {
+            "id": 8,
+            "status": 200,
+            "latency_ms": 5535.87
+        },
+        {
+            "id": 7,
+            "status": 200,
+            "latency_ms": 5997.2
+        },
+        {
+            "id": 5,
+            "status": 200,
+            "latency_ms": 6389.16
+        },
+        {
+            "id": 6,
+            "status": 200,
+            "latency_ms": 6576.88
+        },
+        {
+            "id": 10,
+            "status": 200,
+            "latency_ms": 6769.73
+        },
+        {
+            "id": 12,
+            "status": 200,
+            "latency_ms": 7151.5
+        },
+        {
+            "id": 4,
+            "status": 200,
+            "latency_ms": 7175.4
+        },
+        {
+            "id": 13,
+            "status": 200,
+            "latency_ms": 7348.32
+        },
+        {
+            "id": 11,
+            "status": 200,
+            "latency_ms": 7559.55
+        },
+        {
+            "id": 14,
+            "status": 200,
+            "latency_ms": 7755.24
+        },
+        {
+            "id": 16,
+            "status": 200,
+            "latency_ms": 7950.01
+        },
+        {
+            "id": 15,
+            "status": 200,
+            "latency_ms": 8156.13
+        },
+        {
+            "id": 17,
+            "status": 200,
+            "latency_ms": 8349.41
+        },
+        {
+            "id": 18,
+            "status": 200,
+            "latency_ms": 8558.88
+        },
+        {
+            "id": 19,
+            "status": 200,
+            "latency_ms": 8751.17
+        },
+        {
+            "id": 20,
+            "status": 200,
+            "latency_ms": 9140.04
+        },
+        {
+            "id": 21,
+            "status": 200,
+            "latency_ms": 9533.69
+        },
+        {
+            "id": 23,
+            "status": 200,
+            "latency_ms": 9531.32
+        },
+        {
+            "id": 22,
+            "status": 200,
+            "latency_ms": 9535.37
+        },
+        {
+            "id": 24,
+            "status": 200,
+            "latency_ms": 9533.4
+        }
+    ]
+}

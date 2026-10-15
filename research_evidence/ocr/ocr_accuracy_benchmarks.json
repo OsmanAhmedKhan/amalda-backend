@@ -1,0 +1,22 @@
+[
+    {
+        "Format": "PDF (Image)",
+        "Ground_Truth": "AMALDA OCR PNG",
+        "Exact_Match": true
+    },
+    {
+        "Format": "JPG",
+        "Ground_Truth": "AMALDA OCR JPG",
+        "Exact_Match": true
+    },
+    {
+        "Format": "PNG",
+        "Ground_Truth": "AMALDA OCR PNG",
+        "Exact_Match": true
+    },
+    {
+        "Format": "TIFF",
+        "Ground_Truth": "AMALDA OCR TIFF",
+        "Exact_Match": true
+    }
+]

@@ -1,0 +1,164 @@
+File,Size_Bytes,Lines,Type
+.dockerignore,211,0,Other
+.env,1148,25,Config/Data
+.gitignore,210,0,Other
+alembic.ini,2064,80,Config/Data
+backend_recon.txt,7579,227,Other
+backend_recon_v2.txt,40705,927,Other
+docker-compose.yml,317,15,Config/Data
+Dockerfile,1100,0,Other
+enable_extensions.py,1060,31,Python Source
+fix_extension.py,1389,37,Python Source
+handshake.py,994,28,Python Source
+hard_reset.py,1308,37,Python Source
+init_remote_db.py,602,18,Python Source
+main.py,5581,163,Python Source
+master_security_lockdown.py,2499,61,Python Source
+patch_insforge_db.py,3464,74,Python Source
+patch_rls_policies.py,2092,56,Python Source
+prune_connections.py,1528,40,Python Source
+pytest.ini,83,4,Config/Data
+recon.py,475,19,Python Source
+recon_utf8.py,992,32,Python Source
+recon_v2.py,988,28,Python Source
+requirements.txt,2794,140,Other
+run_inventory.py,2930,79,Python Source
+test_agent_flow.py,1828,57,Python Source
+test_pipeline.py,2501,63,Python Source
+verify_deep_formats.py,4879,149,Python Source
+verify_formats.py,4575,154,Python Source
+verify_formats_auth.py,5149,163,Python Source
+alembic/env.py,1893,62,Python Source
+alembic/README,38,0,Other
+alembic/script.py.mako,704,0,Other
+alembic/versions/77424a2f297c_add_durable_work_units.py,3634,80,Python Source
+alembic/versions/810391917449_clean_init.py,5187,110,Python Source
+app/agents/graph.py,10843,246,Python Source
+app/agents/legal_agents.py,1924,36,Python Source
+app/agents/state.py,565,14,Python Source
+app/api/v1/api_router.py,453,9,Python Source
+app/api/v1/endpoints/analysis.py,11666,269,Python Source
+app/api/v1/endpoints/documents.py,8436,179,Python Source
+app/core/config.py,1348,41,Python Source
+app/core/insforge.py,5997,144,Python Source
+app/core/llm_gateway.py,13331,308,Python Source
+app/core/rate_limit.py,168,5,Python Source
+app/core/security.py,810,20,Python Source
+app/db/models.py,6093,142,Python Source
+app/db/session.py,2051,54,Python Source
+app/db/__init__.py,0,0,Python Source
+app/parsers/extractors.py,6347,133,Python Source
+app/parsers/pdf_parser.py,6800,173,Python Source
+app/parsers/registry.py,2323,62,Python Source
+app/retrieval/vector_store.py,5051,126,Python Source
+app/schemas/api_models.py,1131,32,Python Source
+app/schemas/document.py,458,20,Python Source
+app/services/document_processor.py,8681,205,Python Source
+app/tests/test_api.py,3480,89,Python Source
+app/tests/test_db.py,1482,44,Python Source
+app/tests/test_gateway.py,962,22,Python Source
+app/tests/test_llm_providers.py,1421,40,Python Source
+app/tests/test_pdf.py,766,18,Python Source
+app/tests/test_pipeline.py,2002,54,Python Source
+app/tests/test_postgres.py,1047,28,Python Source
+app/tests/test_registry_phase1.py,1678,44,Python Source
+app/tests/test_registry_phase2.py,1768,50,Python Source
+app/tests/__init__.py,0,0,Python Source
+app/workers/db_queue.py,3240,76,Python Source
+evaluation/evaluation_results.csv,486,6,Other
+evaluation/golden_dataset.json,1079,22,Config/Data
+evaluation/run_eval.py,8217,153,Python Source
+research/evaluate.py,2461,46,Python Source
+research/run_crash_recovery.py,3434,86,Python Source
+research/run_end_to_end_scalability.py,4266,119,Python Source
+research/run_experiment.py,5335,105,Python Source
+research/run_pdf_scalability.py,5360,129,Python Source
+research/run_retrieval_ablation.py,7022,174,Python Source
+research/run_scalability.py,3595,87,Python Source
+research/test_evaluator.py,1850,44,Python Source
+research/test_prompt_injection.py,2169,52,Python Source
+research/__init__.py,0,0,Python Source
+research/baselines/runners.py,2814,65,Python Source
+research/benchmark/amalda_dataset_v1.json,27948,456,Config/Data
+research/benchmark/expand_dataset.py,4927,108,Python Source
+research/benchmark/populate_sample.py,3207,59,Python Source
+research/benchmark/schema.py,1416,29,Python Source
+research/evidence/structured_output/matrix.txt,219,6,Other
+research/results/AMALDA_Multi_Agent_results.json,1539,45,Config/Data
+research/results/Baseline_A_LLM_Only_results.json,32890,45,Config/Data
+research/results/crash_recovery_metrics.csv,126,6,Other
+research/results/end_to_end_scalability.csv,287,5,Other
+research/results/pdf_scalability_metrics.csv,226,2,Other
+research/results/retrieval_ablation_per_query.csv,20479,41,Other
+research/results/retrieval_ablation_summary.csv,97,4,Other
+research/results/scalability_metrics.csv,151,6,Other
+research/results/chroma_ablation_db/chroma.sqlite3,303104,0,Other
+research/results/chroma_ablation_db/9103e581-2d11-44c3-8504-2a75349638df/data_level0.bin,167600,0,Other
+research/results/chroma_ablation_db/9103e581-2d11-44c3-8504-2a75349638df/header.bin,100,0,Other
+research/results/chroma_ablation_db/9103e581-2d11-44c3-8504-2a75349638df/length.bin,400,0,Other
+research/results/chroma_ablation_db/9103e581-2d11-44c3-8504-2a75349638df/link_lists.bin,0,0,Other
+research/results/chroma_ablation_db/ae56f294-d2d6-4381-8914-ee9b2c5f58c4/data_level0.bin,167600,0,Other
+research/results/chroma_ablation_db/ae56f294-d2d6-4381-8914-ee9b2c5f58c4/header.bin,100,0,Other
+research/results/chroma_ablation_db/ae56f294-d2d6-4381-8914-ee9b2c5f58c4/length.bin,400,0,Other
+research/results/chroma_ablation_db/ae56f294-d2d6-4381-8914-ee9b2c5f58c4/link_lists.bin,0,0,Other
+research/results/chroma_ablation_db/e9290ee1-1e77-457c-8964-db73f374b16d/data_level0.bin,167600,0,Other
+research/results/chroma_ablation_db/e9290ee1-1e77-457c-8964-db73f374b16d/header.bin,100,0,Other
+research/results/chroma_ablation_db/e9290ee1-1e77-457c-8964-db73f374b16d/length.bin,400,0,Other
+research/results/chroma_ablation_db/e9290ee1-1e77-457c-8964-db73f374b16d/link_lists.bin,0,0,Other
+research/results/chroma_ablation_db/ebb01525-10bd-47ba-8139-d08aef3eec11/data_level0.bin,167600,0,Other
+research/results/chroma_ablation_db/ebb01525-10bd-47ba-8139-d08aef3eec11/header.bin,100,0,Other
+research/results/chroma_ablation_db/ebb01525-10bd-47ba-8139-d08aef3eec11/length.bin,400,0,Other
+research/results/chroma_ablation_db/ebb01525-10bd-47ba-8139-d08aef3eec11/link_lists.bin,0,0,Other
+research/results/chroma_pdf_scale/chroma.sqlite3,4722688,0,Other
+research/results/chroma_pdf_scale/770e0348-817d-4e45-866d-2af636139882/data_level0.bin,167600,0,Other
+research/results/chroma_pdf_scale/770e0348-817d-4e45-866d-2af636139882/header.bin,100,0,Other
+research/results/chroma_pdf_scale/770e0348-817d-4e45-866d-2af636139882/length.bin,400,0,Other
+research/results/chroma_pdf_scale/770e0348-817d-4e45-866d-2af636139882/link_lists.bin,0,0,Other
+research/results/chroma_pdf_scale/ecc022b1-68f6-4cb2-bb47-dd9f623d0017/data_level0.bin,167600,0,Other
+research/results/chroma_pdf_scale/ecc022b1-68f6-4cb2-bb47-dd9f623d0017/header.bin,100,0,Other
+research/results/chroma_pdf_scale/ecc022b1-68f6-4cb2-bb47-dd9f623d0017/length.bin,400,0,Other
+research/results/chroma_pdf_scale/ecc022b1-68f6-4cb2-bb47-dd9f623d0017/link_lists.bin,0,0,Other
+research/results/chroma_scale_test/chroma.sqlite3,70393856,0,Other
+research/results/chroma_scale_test/1184ea4e-ac6a-4636-a03c-cb599d2b197a/data_level0.bin,167600,0,Other
+research/results/chroma_scale_test/1184ea4e-ac6a-4636-a03c-cb599d2b197a/header.bin,100,0,Other
+research/results/chroma_scale_test/1184ea4e-ac6a-4636-a03c-cb599d2b197a/length.bin,400,0,Other
+research/results/chroma_scale_test/1184ea4e-ac6a-4636-a03c-cb599d2b197a/link_lists.bin,0,0,Other
+research/results/chroma_scale_test/768fdfc7-4435-479c-b7ef-0b5685e089b1/data_level0.bin,167600,0,Other
+research/results/chroma_scale_test/768fdfc7-4435-479c-b7ef-0b5685e089b1/header.bin,100,0,Other
+research/results/chroma_scale_test/768fdfc7-4435-479c-b7ef-0b5685e089b1/length.bin,400,0,Other
+research/results/chroma_scale_test/768fdfc7-4435-479c-b7ef-0b5685e089b1/link_lists.bin,0,0,Other
+research/results/chroma_scale_test/e1927c5c-42de-4946-bd0a-c07b8766f850/data_level0.bin,1676000,0,Other
+research/results/chroma_scale_test/e1927c5c-42de-4946-bd0a-c07b8766f850/header.bin,100,0,Other
+research/results/chroma_scale_test/e1927c5c-42de-4946-bd0a-c07b8766f850/index_metadata.pickle,37912,0,Other
+research/results/chroma_scale_test/e1927c5c-42de-4946-bd0a-c07b8766f850/length.bin,4000,0,Other
+research/results/chroma_scale_test/e1927c5c-42de-4946-bd0a-c07b8766f850/link_lists.bin,8624,0,Other
+research/results/chroma_scale_test/ef4ce3aa-e099-4a90-a61c-8540415fd96d/data_level0.bin,5028000,0,Other
+research/results/chroma_scale_test/ef4ce3aa-e099-4a90-a61c-8540415fd96d/header.bin,100,0,Other
+research/results/chroma_scale_test/ef4ce3aa-e099-4a90-a61c-8540415fd96d/index_metadata.pickle,117920,0,Other
+research/results/chroma_scale_test/ef4ce3aa-e099-4a90-a61c-8540415fd96d/length.bin,12000,0,Other
+research/results/chroma_scale_test/ef4ce3aa-e099-4a90-a61c-8540415fd96d/link_lists.bin,25328,0,Other
+research/results/experiment_20261008_203220/amalda_details.json,15103,452,Config/Data
+research/results/experiment_20261008_203220/amalda_metrics.csv,6924,51,Other
+research/results/experiment_20261008_203220/amalda_summary.json,170,8,Config/Data
+research/results/experiment_20261009_194715/amalda_details.json,16159,452,Config/Data
+research/results/experiment_20261009_194715/amalda_metrics.csv,7956,52,Other
+research/results/experiment_20261009_194715/amalda_summary.json,162,8,Config/Data
+research/results/experiment_20261009_201509/amalda_details.json,16657,502,Config/Data
+research/results/experiment_20261009_201509/amalda_metrics.csv,7352,51,Other
+research/results/experiment_20261009_201509/amalda_summary.json,276,10,Config/Data
+research/results/experiment_20261009_203506/baseline_a_details.json,75645,502,Config/Data
+research/results/experiment_20261009_203506/baseline_a_metrics.csv,64391,554,Other
+research/results/experiment_20261009_203506/baseline_a_summary.json,285,10,Config/Data
+research/results/experiment_20261009_203958/baseline_b_details.json,23724,502,Config/Data
+research/results/experiment_20261009_203958/baseline_b_metrics.csv,13985,101,Other
+research/results/experiment_20261009_203958/baseline_b_summary.json,296,10,Config/Data
+research/results/pdf_test_data/test_contract_100p.pdf,111147,0,Other
+scripts/diagnose_providers.py,5780,117,Python Source
+scripts/test_429_recovery.py,2939,78,Python Source
+scripts/test_crash_initiate.py,2216,61,Python Source
+scripts/test_crash_resume.py,2238,51,Python Source
+scripts/test_parallel_workload.py,2396,52,Python Source
+scripts/test_structured_output.py,2630,59,Python Source
+tests/test_api.py,3915,108,Python Source
+tests/test_db.py,1163,28,Python Source
+tests/test_gateway.py,1102,31,Python Source

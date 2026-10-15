@@ -1,0 +1,597 @@
+{
+    "enable_extensions.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "fix_extension.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "handshake.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "hard_reset.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "init_remote_db.py": [
+        "app.db.models",
+        "app.db.session",
+        "logging"
+    ],
+    "main.py": [
+        "uvicorn",
+        "os",
+        "contextlib",
+        "app.core.config",
+        "app.parsers.pdf_parser",
+        "sqlalchemy.orm",
+        "slowapi.errors",
+        "fastapi.middleware.cors",
+        "app.api.v1.api_router",
+        "fastapi",
+        "app.db.session",
+        "uuid",
+        "app.agents.graph",
+        "slowapi",
+        "starlette.middleware.base",
+        "app.retrieval.vector_store",
+        "asyncio",
+        "sqlalchemy",
+        "logging",
+        "app.core.rate_limit",
+        "contextvars",
+        "app.workers.db_queue"
+    ],
+    "master_security_lockdown.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "patch_insforge_db.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "patch_rls_policies.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "prune_connections.py": [
+        "dotenv",
+        "logging",
+        "sqlalchemy",
+        "os"
+    ],
+    "recon.py": [
+        "os"
+    ],
+    "recon_utf8.py": [
+        "os"
+    ],
+    "recon_v2.py": [
+        "glob",
+        "os"
+    ],
+    "run_inventory.py": [
+        "ast",
+        "json",
+        "csv",
+        "os"
+    ],
+    "test_agent_flow.py": [
+        "warnings",
+        "app.agents.graph",
+        "app.retrieval.vector_store"
+    ],
+    "test_pipeline.py": [
+        "reportlab.pdfgen",
+        "app.parsers.pdf_parser",
+        "app.retrieval.vector_store",
+        "os"
+    ],
+    "verify_deep_formats.py": [
+        "requests",
+        "fitz",
+        "docx",
+        "time",
+        "openpyxl",
+        "os",
+        "PIL",
+        "pptx"
+    ],
+    "verify_formats.py": [
+        "requests",
+        "fitz",
+        "docx",
+        "time",
+        "openpyxl",
+        "os",
+        "PIL",
+        "pptx"
+    ],
+    "verify_formats_auth.py": [
+        "requests",
+        "fitz",
+        "docx",
+        "time",
+        "openpyxl",
+        "os",
+        "PIL",
+        "pptx"
+    ],
+    "alembic/env.py": [
+        "sys",
+        "alembic",
+        "logging.config",
+        "app.db.models",
+        "os",
+        "sqlalchemy"
+    ],
+    "alembic/versions/77424a2f297c_add_durable_work_units.py": [
+        "alembic",
+        "typing",
+        "sqlalchemy"
+    ],
+    "alembic/versions/810391917449_clean_init.py": [
+        "alembic",
+        "typing",
+        "sqlalchemy"
+    ],
+    "app/agents/graph.py": [
+        "typing",
+        "app.core.llm_gateway",
+        "langchain_core.prompts",
+        "langgraph.graph",
+        "tenacity",
+        "pydantic",
+        "logging"
+    ],
+    "app/agents/legal_agents.py": [
+        "app.agents.state",
+        "langchain_core.messages"
+    ],
+    "app/agents/state.py": [
+        "typing"
+    ],
+    "app/api/v1/api_router.py": [
+        "app.api.v1.endpoints",
+        "app.core.security",
+        "fastapi"
+    ],
+    "app/api/v1/endpoints/analysis.py": [
+        "fastapi.responses",
+        "sqlalchemy.orm",
+        "typing",
+        "tenacity",
+        "uuid",
+        "app.core.rate_limit",
+        "app.schemas.api_models",
+        "time",
+        "app.db.models",
+        "json",
+        "fastapi",
+        "app.db.session",
+        "logging"
+    ],
+    "app/api/v1/endpoints/documents.py": [
+        "magic",
+        "typing",
+        "sqlalchemy.orm",
+        "app.core.config",
+        "app.core.rate_limit",
+        "app.schemas.api_models",
+        "hashlib",
+        "werkzeug.utils",
+        "app.db.models",
+        "zipfile",
+        "os",
+        "fastapi",
+        "app.db.session",
+        "logging"
+    ],
+    "app/core/config.py": [
+        "pydantic_settings",
+        "os"
+    ],
+    "app/core/insforge.py": [
+        "typing",
+        "boto3",
+        "psycopg2.extras",
+        "psycopg2",
+        "sqlite3",
+        "botocore.exceptions",
+        "os",
+        "logging",
+        "app.core.config"
+    ],
+    "app/core/llm_gateway.py": [
+        "threading",
+        "certifi",
+        "typing",
+        "app.core.config",
+        "warnings",
+        "langchain_groq",
+        "time",
+        "os",
+        "langchain_core.output_parsers",
+        "langchain_openai",
+        "abc",
+        "ssl",
+        "json",
+        "langchain_google_genai",
+        "httpx",
+        "logging"
+    ],
+    "app/core/rate_limit.py": [
+        "slowapi",
+        "slowapi.util"
+    ],
+    "app/core/security.py": [
+        "fastapi.security.api_key",
+        "logging",
+        "fastapi",
+        "os"
+    ],
+    "app/db/models.py": [
+        "sqlalchemy.orm",
+        "enum",
+        "uuid",
+        "datetime",
+        "sqlalchemy",
+        "app.db.session"
+    ],
+    "app/db/session.py": [
+        "dotenv",
+        "sqlalchemy.orm",
+        "sqlalchemy",
+        "os"
+    ],
+    "app/db/__init__.py": [],
+    "app/parsers/extractors.py": [
+        "langchain_text_splitters",
+        "docx",
+        "pymupdf",
+        "openpyxl",
+        "app.parsers.registry",
+        "os",
+        "PIL",
+        "pptx",
+        "pytesseract"
+    ],
+    "app/parsers/pdf_parser.py": [
+        "pdfplumber",
+        "fitz",
+        "typing",
+        "uuid",
+        "io",
+        "app.core.insforge",
+        "os",
+        "PIL",
+        "pytesseract",
+        "pydantic",
+        "logging"
+    ],
+    "app/parsers/registry.py": [
+        "magic",
+        "typing",
+        "abc",
+        "zipfile",
+        "dataclasses"
+    ],
+    "app/retrieval/vector_store.py": [
+        "typing",
+        "numpy",
+        "chromadb.utils",
+        "chromadb",
+        "os",
+        "rank_bm25",
+        "app.core.config"
+    ],
+    "app/schemas/api_models.py": [
+        "typing",
+        "pydantic"
+    ],
+    "app/schemas/document.py": [
+        "typing",
+        "pydantic"
+    ],
+    "app/services/document_processor.py": [
+        "threading",
+        "sqlalchemy.orm",
+        "typing",
+        "time",
+        "hashlib",
+        "pymupdf",
+        "app.db.models",
+        "langchain_text_splitters",
+        "logging"
+    ],
+    "app/tests/test_api.py": [
+        "fastapi.testclient",
+        "pytest",
+        "app.core.rate_limit",
+        "sys",
+        "unittest.mock",
+        "os",
+        "app.core.security",
+        "main"
+    ],
+    "app/tests/test_db.py": [
+        "uuid",
+        "sys",
+        "sqlalchemy.exc",
+        "os",
+        "sqlalchemy",
+        "app.db.session"
+    ],
+    "app/tests/test_gateway.py": [
+        "app.core.llm_gateway",
+        "pytest",
+        "sys",
+        "os"
+    ],
+    "app/tests/test_llm_providers.py": [
+        "groq",
+        "dotenv",
+        "pytest",
+        "os"
+    ],
+    "app/tests/test_pdf.py": [
+        "fitz",
+        "pytest",
+        "os"
+    ],
+    "app/tests/test_pipeline.py": [
+        "app.workers",
+        "sqlalchemy.orm",
+        "pytest",
+        "uuid",
+        "sys",
+        "app.db.models",
+        "app.retrieval.vector_store",
+        "os",
+        "sqlalchemy"
+    ],
+    "app/tests/test_postgres.py": [
+        "dotenv",
+        "pytest",
+        "sqlalchemy",
+        "os"
+    ],
+    "app/tests/test_registry_phase1.py": [
+        "app.parsers.extractors",
+        "pytest",
+        "sys",
+        "os",
+        "PIL"
+    ],
+    "app/tests/test_registry_phase2.py": [
+        "app.parsers.extractors",
+        "pytest",
+        "docx",
+        "sys",
+        "openpyxl",
+        "os",
+        "pptx"
+    ],
+    "app/tests/__init__.py": [],
+    "app/workers/db_queue.py": [
+        "app.parsers.extractors",
+        "os",
+        "asyncio",
+        "sqlalchemy",
+        "app.db.session",
+        "logging"
+    ],
+    "evaluation/run_eval.py": [
+        "requests",
+        "app.core.llm_gateway",
+        "time",
+        "sys",
+        "os",
+        "langchain_core.prompts",
+        "json",
+        "pandas",
+        "pydantic",
+        "app.core.config"
+    ],
+    "research/evaluate.py": [
+        "app.core.llm_gateway",
+        "sys",
+        "langchain_core.prompts",
+        "os",
+        "pydantic"
+    ],
+    "research/run_crash_recovery.py": [
+        "csv",
+        "pathlib",
+        "time",
+        "sys",
+        "os",
+        "research.baselines.runners",
+        "json",
+        "argparse"
+    ],
+    "research/run_end_to_end_scalability.py": [
+        "sentence_transformers",
+        "pathlib",
+        "time",
+        "sys",
+        "os",
+        "chromadb",
+        "csv",
+        "psutil",
+        "langchain_text_splitters"
+    ],
+    "research/run_experiment.py": [
+        "research.evaluate",
+        "pathlib",
+        "os",
+        "time",
+        "sys",
+        "datetime",
+        "research.baselines.runners",
+        "csv",
+        "json",
+        "argparse"
+    ],
+    "research/run_pdf_scalability.py": [
+        "fitz",
+        "sentence_transformers",
+        "pathlib",
+        "time",
+        "sys",
+        "os",
+        "chromadb",
+        "csv",
+        "psutil",
+        "langchain_text_splitters"
+    ],
+    "research/run_retrieval_ablation.py": [
+        "sentence_transformers",
+        "csv",
+        "typing",
+        "math",
+        "pathlib",
+        "os",
+        "sys",
+        "chromadb",
+        "collections",
+        "json"
+    ],
+    "research/run_scalability.py": [
+        "sentence_transformers",
+        "pathlib",
+        "time",
+        "sys",
+        "os",
+        "tracemalloc",
+        "csv",
+        "langchain_text_splitters"
+    ],
+    "research/test_evaluator.py": [
+        "pytest",
+        "research.evaluate"
+    ],
+    "research/test_prompt_injection.py": [
+        "research.baselines.runners",
+        "time",
+        "sys",
+        "os"
+    ],
+    "research/__init__.py": [],
+    "research/baselines/runners.py": [
+        "fastapi.testclient",
+        "app.core.llm_gateway",
+        "app.core.rate_limit",
+        "sys",
+        "langchain_core.prompts",
+        "unittest.mock",
+        "os",
+        "app.core.security",
+        "main"
+    ],
+    "research/benchmark/expand_dataset.py": [
+        "research.benchmark.schema",
+        "os",
+        "sys",
+        "json"
+    ],
+    "research/benchmark/populate_sample.py": [
+        "schema",
+        "os",
+        "json"
+    ],
+    "research/benchmark/schema.py": [
+        "typing",
+        "os",
+        "pydantic",
+        "json"
+    ],
+    "scripts/diagnose_providers.py": [
+        "certifi",
+        "time",
+        "sys",
+        "ssl",
+        "os",
+        "dotenv",
+        "httpx"
+    ],
+    "scripts/test_429_recovery.py": [
+        "threading",
+        "app.core.llm_gateway",
+        "time",
+        "sys",
+        "langchain_core.prompts",
+        "os",
+        "pydantic"
+    ],
+    "scripts/test_crash_initiate.py": [
+        "threading",
+        "sqlalchemy.orm",
+        "uuid",
+        "time",
+        "sys",
+        "app.db.models",
+        "os",
+        "app.db.session"
+    ],
+    "scripts/test_crash_resume.py": [
+        "sqlalchemy.orm",
+        "time",
+        "sys",
+        "app.db.models",
+        "os",
+        "sqlalchemy",
+        "app.db.session"
+    ],
+    "scripts/test_parallel_workload.py": [
+        "threading",
+        "app.core.llm_gateway",
+        "concurrent.futures",
+        "time",
+        "sys",
+        "langchain_core.prompts",
+        "os",
+        "pydantic"
+    ],
+    "scripts/test_structured_output.py": [
+        "app.core.llm_gateway",
+        "time",
+        "sys",
+        "langchain_core.output_parsers",
+        "langchain_core.prompts",
+        "os",
+        "pydantic"
+    ],
+    "tests/test_api.py": [
+        "fastapi.testclient",
+        "pytest",
+        "app.core.security",
+        "main"
+    ],
+    "tests/test_db.py": [
+        "sys",
+        "unittest.mock",
+        "os"
+    ],
+    "tests/test_gateway.py": [
+        "sys",
+        "unittest.mock",
+        "os"
+    ]
+}

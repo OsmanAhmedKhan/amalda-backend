@@ -1,0 +1,17 @@
+[
+    {
+        "Provider": "Groq-Primary",
+        "Model": "llama-3.1-8b-instant",
+        "Expected_Failover": "Yes"
+    },
+    {
+        "Provider": "Gemini-Main",
+        "Model": "gemini-1.5-flash",
+        "Expected_Failover": "N/A"
+    },
+    {
+        "Provider": "Cloudflare-Main",
+        "Model": "@cf/meta/llama-3.2-3b-instruct",
+        "Expected_Failover": "N/A"
+    }
+]
