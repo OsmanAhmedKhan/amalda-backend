@@ -1,5 +1,5 @@
 # Use the official Python 3.11 slim image for a small, secure footprint
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
