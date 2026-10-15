@@ -1,4 +1,4 @@
-# Use the official Python 3.11 slim image for a small, secure footprint
+# Use the official Python 3.13 slim image for a small, secure footprint
 FROM python:3.13-slim
 
 # Set environment variables
@@ -6,11 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 
-# Install system dependencies required for PyMuPDF, Tesseract OCR, and networking
+# Install system dependencies required for PyMuPDF, Tesseract OCR, PostgreSQL, and networking
 RUN apt-get update && apt-get install -y \
     build-essential \
     tesseract-ocr \
     curl \
+    libpq-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
