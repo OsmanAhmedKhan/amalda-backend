@@ -1,19 +1,55 @@
 import os
+import requests
 import chromadb
 import numpy as np
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
 
 class SafeGoogleEmbedder(EmbeddingFunction):
-    """Custom adapter to bypass ChromaDB's deprecated Google wrapper."""
+    """Custom adapter that calls the Gemini API directly via HTTP, bypassing broken SDKs."""
     def __init__(self):
-        self.embedder = GoogleGenerativeAIEmbeddings(model=settings.EMBEDDING_MODEL)
+        self.api_key = settings.GEMINI_API_KEY
+        
+        # Ensure clean model name regardless of what is in Render environment variables
+        raw_model = settings.EMBEDDING_MODEL.replace("models/", "")
+        if not raw_model or raw_model == "all-MiniLM-L6-v2":
+            raw_model = "text-embedding-004"
+            
+        self.model = f"models/{raw_model}"
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/{self.model}:batchEmbedContents?key={self.api_key}"
 
     def __call__(self, input: Documents) -> Embeddings:
-        return self.embedder.embed_documents(input)
+        if not input:
+            return []
+            
+        # Format request exactly as Google's REST API expects
+        requests_payload = []
+        for text in input:
+            requests_payload.append({
+                "model": self.model,
+                "content": {"parts": [{"text": text}]}
+            })
+            
+        response = requests.post(
+            self.url,
+            json={"requests": requests_payload},
+            headers={"Content-Type": "application/json"}
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"Gemini API Error {response.status_code}: {response.text}")
+            
+        data = response.json()
+        
+        # Extract embeddings
+        embeddings = []
+        for item in data.get("embeddings", []):
+            embeddings.append(item["values"])
+            
+        return embeddings
+
 
 class VectorDatabase:
     def __init__(self):
@@ -56,8 +92,8 @@ class VectorDatabase:
             }
             metadatas.append(meta)
             
-        # Batch insert to handle large documents efficiently
-        batch_size = 100
+        # Batch insert to handle large documents efficiently (Google allows max 100 per batch)
+        batch_size = 90 
         for i in range(0, len(ids), batch_size):
             self.collection.add(
                 ids=ids[i:i + batch_size],
@@ -77,12 +113,7 @@ class VectorDatabase:
             raise Exception(f"Failed to delete embeddings for {filename}: {str(e)}")
 
     def search(self, query: str, n_results: int = 10, lambda_mult: float = 0.5) -> Dict[str, Any]:
-        """
-        Research-Grade Retrieval Pipeline:
-        Retrieves top 10 chunks using Dense + Sparse Fusion (RRF). 
-        Since chunks are now ~1200 characters each, 10 chunks provide rich, self-contained context.
-        """
-        # 1. Fetch pool from ChromaDB
+        """Retrieves top chunks using Dense + Sparse Fusion (RRF)."""
         pool_size = max(20, n_results * 3)
         
         dense_results = self.collection.query(
@@ -98,13 +129,11 @@ class VectorDatabase:
         pool_docs = dense_results['documents'][0]
         pool_metas = dense_results['metadatas'][0]
 
-        # 2. Sparse Search (BM25)
         tokenized_pool = [doc.lower().split() for doc in pool_docs]
         bm25 = BM25Okapi(tokenized_pool)
         tokenized_query = query.lower().split()
         bm25_scores = bm25.get_scores(tokenized_query)
 
-        # 3. Reciprocal Rank Fusion (RRF)
         dense_ranks = {doc_id: rank for rank, doc_id in enumerate(pool_ids)}
         sparse_sorted_indices = np.argsort(bm25_scores)[::-1]
         sparse_ranks = {pool_ids[idx]: rank for rank, idx in enumerate(sparse_sorted_indices)}
@@ -116,7 +145,6 @@ class VectorDatabase:
             sparse_score = 1.0 / (rrf_k + sparse_ranks[doc_id])
             hybrid_scores[doc_id] = dense_score + sparse_score
 
-        # 4. Sort and select final n_results
         sorted_ids = sorted(hybrid_scores, key=hybrid_scores.get, reverse=True)[:n_results]
 
         final_docs = []
