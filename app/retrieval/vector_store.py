@@ -1,10 +1,19 @@
 import os
 import chromadb
 import numpy as np
-from chromadb.utils import embedding_functions
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
+
+class SafeGoogleEmbedder(EmbeddingFunction):
+    """Custom adapter to bypass ChromaDB's deprecated Google wrapper."""
+    def __init__(self):
+        self.embedder = GoogleGenerativeAIEmbeddings(model=settings.EMBEDDING_MODEL)
+
+    def __call__(self, input: Documents) -> Embeddings:
+        return self.embedder.embed_documents(input)
 
 class VectorDatabase:
     def __init__(self):
@@ -13,11 +22,8 @@ class VectorDatabase:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(path=self.persist_directory)
         
-        # Initialize Dense Embedding Function (Google API - 0MB Local RAM)
-        self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-            api_key=settings.GEMINI_API_KEY,
-            model_name=settings.EMBEDDING_MODEL
-        )
+        # Initialize our safe custom wrapper
+        self.embedding_fn = SafeGoogleEmbedder()
         
         # Get or create the main legal document collection
         self.collection = self.client.get_or_create_collection(
