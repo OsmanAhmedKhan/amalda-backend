@@ -6,13 +6,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 
-# Install system dependencies required for PyMuPDF, Tesseract OCR, PostgreSQL, and networking
+# Install system dependencies required for PyMuPDF, Tesseract OCR, PostgreSQL, MIME sniffing, and networking
 RUN apt-get update && apt-get install -y \
     build-essential \
     tesseract-ocr \
     curl \
     libpq-dev \
     gcc \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
