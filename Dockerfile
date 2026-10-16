@@ -6,6 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=10000
 
+# Memory optimization for 512MB free tier limits
+ENV MALLOC_ARENA_MAX=2
+ENV MAX_WORKERS=1
+ENV WEB_CONCURRENCY=1
+ENV OMP_NUM_THREADS=1
+
 # Install system dependencies required for PyMuPDF, Tesseract OCR, PostgreSQL, MIME sniffing, and networking
 RUN apt-get update && apt-get install -y \
     build-essential \
