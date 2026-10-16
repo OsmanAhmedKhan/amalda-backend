@@ -1,5 +1,5 @@
-# Use the official Python 3.13 slim image for a small, secure footprint
-FROM python:3.13-slim
+# Use Python 3.12 slim for stable Protobuf and ML library compilation
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
