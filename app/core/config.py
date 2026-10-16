@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Model Configuration
     DEFAULT_MODEL: str = "llama-3.1-8b-instant"
     FALLBACK_MODEL: str = "gemma2-9b-it"
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL: str = "models/text-embedding-004" # FIXED: Bypasses 512MB RAM limit
     
     # Provider Settings (API Keys)
     GROQ_API_KEY: str = ""

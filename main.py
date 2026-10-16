@@ -28,7 +28,7 @@ class RequestIDFilter(logging.Filter):
 # Initialize Global Logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - [%(levelname)s] - [ReqID: %(request_id)s] - %(message)s",
+    format="%(asctime)s [%(levelname)s] - [ReqID: %(request_id)s] - %(message)s", # FIXED: Syntax error removed
     handlers=[
         logging.FileHandler("./logs/amalda_backend.log", encoding="utf-8"),
         logging.StreamHandler()
@@ -124,7 +124,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(api_router, prefix="/api/v1")
 
 # --- 6. DEEP HEALTH CHECK ---
+# FIXED: Render expects /health, mapped both to be safe
 @app.get("/")
+@app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
     health_status = {
         "system": settings.PROJECT_NAME,

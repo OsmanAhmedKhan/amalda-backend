@@ -13,8 +13,9 @@ class VectorDatabase:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(path=self.persist_directory)
         
-        # Initialize Dense Embedding Function (Local Model)
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+        # Initialize Dense Embedding Function (Google API - 0MB Local RAM)
+        self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+            api_key=settings.GEMINI_API_KEY,
             model_name=settings.EMBEDDING_MODEL
         )
         
