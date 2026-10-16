@@ -46,6 +46,7 @@ jsonschema-specifications==2025.9.1
 kubernetes==36.0.3
 langchain==1.4.0
 langchain-core==1.6.2
+langchain-text-splitters
 langchain-google-genai
 langchain-groq==1.1.3
 langchain-openai==1.6.2
