@@ -5,10 +5,12 @@ import magic
 import zipfile
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
 from app.core.config import settings
+from app.core.security import verify_api_key
 from app.schemas.api_models import UploadResponse, ErrorSchema
 from app.db.session import get_db
 from app.db.models import DocumentRecord, DocStatus, utc_now
@@ -128,6 +130,26 @@ async def delete_document(filename: str, request: Request, db: Session = Depends
         db.rollback()
         logger.error(f"Failed to delete document {safe_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- NEW: SECURE DOWNLOAD ENDPOINT FOR SPLIT-SCREEN RAG ---
+@router.get("/{filename}/download")
+async def download_document(filename: str, api_key: str = Depends(verify_api_key)):
+    """
+    Securely serves a PDF inline for the frontend viewer.
+    Requires X-API-Key header.
+    """
+    safe_name = secure_filename(filename)
+    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Document '{safe_name}' not found in storage.")
+        
+    return FileResponse(
+        path=file_path, 
+        filename=safe_name, 
+        media_type="application/pdf", 
+        content_disposition_type="inline"  # Crucial: Enforces inline browser rendering
+    )
 
 @router.post("/upload", response_model=UploadResponse)
 @limiter.limit("10/minute")
