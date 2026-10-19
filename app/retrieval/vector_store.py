@@ -69,30 +69,36 @@ class VectorDatabase:
         )
 
     def index_document(self, parsed_doc) -> None:
-        """Indexes dense chunks into ChromaDB."""
+        """Indexes dense chunks into ChromaDB with accurate page numbers."""
         ids = []
         documents = []
         metadatas = []
         
         for idx, node in enumerate(parsed_doc.nodes):
-            chunk_id = f"{parsed_doc.filename}_chunk_{idx}"
+            chunk_id = getattr(node, "node_id", f"{parsed_doc.filename}_chunk_{idx}")
             ids.append(chunk_id)
             documents.append(node.text)
             
-            page_num = "1"
-            if hasattr(node, "metadata") and isinstance(node.metadata, dict):
-                page_num = str(node.metadata.get("page_label", "1"))
+            # Robust Multi-Schema Page Number Resolution
+            page_num = 1
+            if hasattr(node, "bounding_box") and hasattr(node.bounding_box, "page_number"):
+                page_num = node.bounding_box.page_number
+            elif hasattr(node, "page_number"):
+                page_num = node.page_number
+            elif hasattr(node, "metadata") and isinstance(node.metadata, dict):
+                page_num = node.metadata.get("page_number", node.metadata.get("page", node.metadata.get("page_label", 1)))
             elif hasattr(node, "metadata") and hasattr(node.metadata, "page_number"):
-                page_num = str(node.metadata.page_number)
-            
+                page_num = node.metadata.page_number
+
             meta = {
                 "filename": parsed_doc.filename,
-                "page": page_num,
-                "bounding_box": "" # Empty default to prevent serialization errors
+                "page": int(page_num),
+                "page_number": int(page_num),
+                "bounding_box": ""
             }
             metadatas.append(meta)
             
-        # Batch insert to handle large documents efficiently (Google allows max 100 per batch)
+        # Batch insert (Google embedder supports up to 100 per batch)
         batch_size = 90 
         for i in range(0, len(ids), batch_size):
             self.collection.add(
@@ -123,11 +129,12 @@ class VectorDatabase:
         )
         
         if not dense_results['documents'] or not dense_results['documents'][0]:
-            return {"ids": [[]], "documents": [[]], "metadatas": [[]]}
+            return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
 
         pool_ids = dense_results['ids'][0]
         pool_docs = dense_results['documents'][0]
         pool_metas = dense_results['metadatas'][0]
+        pool_dists = dense_results.get('distances', [[0.5] * len(pool_ids)])[0]
 
         tokenized_pool = [doc.lower().split() for doc in pool_docs]
         bm25 = BM25Okapi(tokenized_pool)
@@ -149,13 +156,16 @@ class VectorDatabase:
 
         final_docs = []
         final_metas = []
+        final_dists = []
         for doc_id in sorted_ids:
             idx = pool_ids.index(doc_id)
             final_docs.append(pool_docs[idx])
             final_metas.append(pool_metas[idx])
+            final_dists.append(pool_dists[idx])
 
         return {
             "ids": [sorted_ids],
             "documents": [final_docs],
-            "metadatas": [final_metas]
+            "metadatas": [final_metas],
+            "distances": [final_dists]
         }

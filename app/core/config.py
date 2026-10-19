@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Model Configuration
     DEFAULT_MODEL: str = "llama-3.1-8b-instant"
     FALLBACK_MODEL: str = "gemma2-9b-it"
-    EMBEDDING_MODEL: str = "models/text-embedding-004" # FIXED: Bypasses 512MB RAM limit
+    EMBEDDING_MODEL: str = "models/text-embedding-004" # Bypasses 512MB RAM limit
     
     # Provider Settings (API Keys)
     GROQ_API_KEY: str = ""
@@ -18,12 +18,14 @@ class Settings(BaseSettings):
     CLOUDFLARE_API_KEY: str = ""
     CF_ACCOUNT_ID: str = ""
     OPENROUTER_API_KEY: str = ""
-    GEMINI_API_KEY: str = ""
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    API_KEY: str = os.getenv("API_KEY", "amalda_secure_api_key_2026")
     
-    # Local Storage Paths (Fallbacks)
-    UPLOAD_DIR: str = "./data/uploads"
-    CHROMA_PERSIST_DIR: str = "./data/chroma_db"
-    LOCAL_DB_PATH: str = "./data/amalda.db"
+    # CRITICAL FIX: Absolute paths prevent FileNotFoundError on Render
+    BASE_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", os.path.join(BASE_DIR, "data", "uploads"))
+    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", os.path.join(BASE_DIR, "data", "chroma_db"))
+    LOCAL_DB_PATH: str = os.getenv("LOCAL_DB_PATH", os.path.join(BASE_DIR, "data", "amalda.db"))
 
     # InsForge Infrastructure Settings
     INSFORGE_DB_URL: str = ""

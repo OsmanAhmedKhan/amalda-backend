@@ -118,13 +118,11 @@ class LegalDocumentParser:
             if not job_status:
                 insforge.update_job_status(filename, 0, total_pages, 'PROCESSING')
 
-            # Process in bounded batches (e.g., 50 pages at a time) to save memory
             for i in range(start_page, total_pages, batch_size):
                 end_page = min(i + batch_size, total_pages)
                 pages_data = []
-                batch_has_text = False # Tracker for strict validation
+                batch_has_text = False
                 
-                # Load only the slice into memory
                 for page_num in range(i, end_page):
                     text = pdf.pages[page_num].extract_text()
                     if not text or len(text.strip()) < 50:
@@ -141,7 +139,6 @@ class LegalDocumentParser:
                         "height": pdf.pages[page_num].height
                     })
 
-                # STRICT VALIDATION GATE: Prevent silent empty vectorization
                 if not batch_has_text:
                     logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {file_path}.")
                     raise HTTPException(
@@ -149,21 +146,17 @@ class LegalDocumentParser:
                         detail=f"Unprocessable Entity: PDF extraction yielded no readable text between pages {i} and {end_page}. OCR failed or document is empty."
                     )
 
-                # Chunk exactly as before
                 nodes = self._semantic_chunking(pages_data, filename)
                 
-                # Instantly flush to VectorDB to free RAM
                 class TmpDoc: pass
                 tmp = TmpDoc()
                 tmp.filename = filename
                 tmp.nodes = nodes
                 vector_db.index_document(tmp)
 
-                # Commit Checkpoint to InsForge/SQLite safely
                 insforge.update_job_status(filename, end_page, total_pages, 'PROCESSING')
                 logger.info(f"✅ Checkpoint Saved: Processed pages {i} to {end_page} of {total_pages}")
 
-        # Finalize
         insforge.update_job_status(filename, total_pages, total_pages, 'COMPLETED')
         logger.info(f"✅ Fully completed processing {filename}.")
         
@@ -171,7 +164,7 @@ class LegalDocumentParser:
         """Legacy compatibility wrapper for older endpoints"""
         logger.info(f"Extracting text from {filename} (Legacy Mode)...")
         pages_data = []
-        document_has_text = False # Tracker for strict validation
+        document_has_text = False
         
         with pdfplumber.open(file_path) as pdf:
             for i, page in enumerate(pdf.pages):
@@ -190,7 +183,6 @@ class LegalDocumentParser:
                     "height": page.height
                 })
 
-        # STRICT VALIDATION GATE
         if not document_has_text:
             logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {file_path}.")
             raise HTTPException(

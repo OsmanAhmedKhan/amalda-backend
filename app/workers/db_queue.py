@@ -3,8 +3,9 @@ import asyncio
 import logging
 from sqlalchemy import text
 from app.db.session import SessionLocal
+from app.core.config import settings
 
-# Import the new Format-Agnostic Registry
+# Import the Format-Agnostic Registry
 from app.parsers.extractors import registry
 
 logger = logging.getLogger("AMALDA_API")
@@ -47,24 +48,41 @@ async def document_worker_loop(app_state):
                 logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename}")
                 
                 try:
-                    file_path = os.path.join("./data/uploads", filename)
+                    # Dynamically read from configured UPLOAD_DIR
+                    file_path = os.path.join(settings.UPLOAD_DIR, filename)
                     
-                    # ---------------------------------------------------------
-                    # ENTERPRISE UPGRADE: Format-Agnostic Registry Extraction
-                    # ---------------------------------------------------------
+                    if not os.path.exists(file_path):
+                        # Fallback check in case relative path was used
+                        alt_path = os.path.join("./data/uploads", filename)
+                        if os.path.exists(alt_path):
+                            file_path = alt_path
+                        else:
+                            raise FileNotFoundError(f"Uploaded file not found at {file_path}")
+
+                    # Format-Agnostic Registry Extraction
                     parsed_doc = registry.extract(file_path, filename)
+                    
+                    # Validate that parsed_doc has actual nodes/content
+                    if not parsed_doc or not getattr(parsed_doc, "nodes", None):
+                        raise ValueError(f"Document {filename} extracted zero readable text nodes.")
+                        
                     app_state.db.index_document(parsed_doc)
                     
-                    # Explicitly nullify any previous error message on success
+                    # Explicitly update status to COMPLETED and clear previous errors
                     db.execute(
                         text("UPDATE document_records SET status = 'COMPLETED', error_message = NULL WHERE id = :id"), 
                         {"id": doc_id}
                     )
                     db.commit()
                     logger.info(f"[Worker] ✅ Successfully finished processing {filename}")
+                    
                 except Exception as e:
                     logger.error(f"[Worker] ❌ Error processing {filename}: {e}", exc_info=True)
-                    db.execute(text("UPDATE document_records SET status = 'FAILED', error_message = :err WHERE id = :id"), {"id": doc_id, "err": str(e)})
+                    clean_err = str(e).replace("'", "")
+                    db.execute(
+                        text("UPDATE document_records SET status = 'FAILED', error_message = :err WHERE id = :id"), 
+                        {"id": doc_id, "err": clean_err}
+                    )
                     db.commit()
             else:
                 # No tasks found, sleep before polling again

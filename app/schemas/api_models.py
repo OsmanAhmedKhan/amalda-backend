@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ActionableAdvice(BaseModel):
     advice: str
@@ -21,6 +21,7 @@ class AnalysisResponse(BaseModel):
     confidence_score: int
     key_actions: List[ActionableAdvice] # Upgraded for exact provenance
     verification_attempts: int = Field(default=1, description="Number of self-correction loops taken.")
+    sources: Optional[List[Dict[str, Any]]] = Field(default=[], description="List of source metadata citations for Next.js UI")
 
 class UploadResponse(BaseModel):
     filename: str

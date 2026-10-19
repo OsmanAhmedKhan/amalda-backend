@@ -16,11 +16,9 @@ from app.db.models import ConversationThread, ChatMessage, QueryAudit
 logger = logging.getLogger("AMALDA_API")
 router = APIRouter()
 
-
 def _extract_text(value: Any) -> str:
     """
-    Safely normalizes arbitrary LLM output formats (strings, LangChain AIMessage,
-    or lists of content dictionaries/blocks) into a flat string for Pydantic compliance.
+    Safely normalizes arbitrary LLM output formats into a flat string for Pydantic compliance.
     """
     if value is None:
         return ""
@@ -45,7 +43,6 @@ def _extract_text(value: Any) -> str:
         return _extract_text(value.content)
     return str(value)
 
-
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -55,7 +52,6 @@ def _extract_text(value: Any) -> str:
 def resilient_agent_invoke(agent_graph, inputs):
     # Set recursion limit to 12 (allows 1 full pass + ~2 reflexion loops)
     return agent_graph.invoke(inputs, {"recursion_limit": 12})
-
 
 def _retrieve_context_and_history(query: str, thread_id: str | None, vector_db, db: Session):
     # 1. Resolve or create thread
@@ -87,12 +83,36 @@ def _retrieve_context_and_history(query: str, thread_id: str | None, vector_db, 
         raise HTTPException(status_code=404, detail="No relevant context found in documents.")
 
     evidence_chunks = []
-    for doc_text, doc_id in zip(results['documents'][0], results['ids'][0]):
+    sources_payload = [] # NEW: Build the strict frontend citations schema
+    
+    docs = results['documents'][0]
+    ids = results['ids'][0]
+    
+    # Safely extract metadatas and distances (scores) if Chroma provides them
+    metadatas = results.get('metadatas', [[]])[0] if results.get('metadatas') else [{}] * len(docs)
+    distances = results.get('distances', [[]])[0] if results.get('distances') else [0.9] * len(docs)
+
+    for doc_text, doc_id, meta, dist in zip(docs, ids, metadatas, distances):
+        # Build the LLM's context string
         evidence_chunks.append(f"\n{doc_text}")
+        
+        # Build the exact Next.js JSON object for this chunk
+        safe_meta = meta or {}
+        # Convert Chroma distance to a confidence percentage (mock logic based on distance)
+        confidence = round(1.0 - (dist if dist < 1.0 else 0.5), 2)
+        
+        sources_payload.append({
+            "document_id": safe_meta.get("filename", "unknown.pdf"),
+            # Ensure page_number defaults to 1 if ingestion failed to tag it
+            "page_number": int(safe_meta.get("page", safe_meta.get("page_number", 1))),
+            "snippet": doc_text[:150].replace("\n", " ").strip() + "...",
+            "confidence_score": confidence
+        })
+
     evidence_text = "\n\n".join(evidence_chunks)
 
-    return thread_id, evidence_text, conversation_history
-
+    # Return sources alongside the text so the endpoint can pass it to the client
+    return thread_id, evidence_text, conversation_history, sources_payload
 
 def _record_audit_and_messages(db: Session, thread_id: str, query: str, final_state: dict, duration_ms: int):
     # Save User message
@@ -127,7 +147,6 @@ def _record_audit_and_messages(db: Session, thread_id: str, query: str, final_st
     db.add(audit)
     db.commit()
 
-
 @router.post("/", response_model=AnalysisResponse)
 @limiter.limit("5/minute")
 async def analyze_query(request: Request, request_data: QueryRequest, db: Session = Depends(get_db)):
@@ -136,7 +155,7 @@ async def analyze_query(request: Request, request_data: QueryRequest, db: Sessio
 
     try:
         vector_db = request.app.state.db
-        thread_id, evidence_text, conversation_history = _retrieve_context_and_history(
+        thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
             request_data.query, request_data.thread_id, vector_db, db
         )
 
@@ -160,24 +179,28 @@ async def analyze_query(request: Request, request_data: QueryRequest, db: Sessio
             for action in final_state.get("key_actions", [])
         ]
 
-        return AnalysisResponse(
-            thread_id=thread_id,
-            query=request_data.query,
-            retrieved_evidence=evidence_text,
-            clause_analysis=_extract_text(final_state.get("clause_analysis", "")),
-            risk_analysis=_extract_text(final_state.get("risk_analysis", "")),
-            final_verdict=_extract_text(final_state.get("final_verdict", "")),
-            risk_level=str(final_state.get("risk_level", "UNKNOWN")),
-            confidence_score=int(final_state.get("confidence_score", 0)),
-            key_actions=key_actions_dumped,
-            verification_attempts=int(final_state.get("verification_attempts", 1))
-        )
+        # NOTE TO BACKEND DEV: Ensure your AnalysisResponse in api_models.py accepts "sources: list = []"
+        response_data = {
+            "thread_id": thread_id,
+            "query": request_data.query,
+            "retrieved_evidence": evidence_text,
+            "clause_analysis": _extract_text(final_state.get("clause_analysis", "")),
+            "risk_analysis": _extract_text(final_state.get("risk_analysis", "")),
+            "final_verdict": _extract_text(final_state.get("final_verdict", "")),
+            "risk_level": str(final_state.get("risk_level", "UNKNOWN")),
+            "confidence_score": int(final_state.get("confidence_score", 0)),
+            "key_actions": key_actions_dumped,
+            "verification_attempts": int(final_state.get("verification_attempts", 1)),
+            "sources": sources # Injecting the citations
+        }
+        
+        return AnalysisResponse(**response_data)
+        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error during analysis query: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/stream")
 @limiter.limit("5/minute")
@@ -193,7 +216,7 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
             
             # 1. State: Retrieval
             yield f"event: status\ndata: {json.dumps({'stage': 'retrieval', 'message': 'Searching document vector index...'})}\n\n"
-            thread_id, evidence_text, conversation_history = _retrieve_context_and_history(
+            thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
                 request_data.query, request_data.thread_id, vector_db, db
             )
 
@@ -212,7 +235,6 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
             yield f"event: status\ndata: {json.dumps({'stage': 'clause_agent', 'message': 'Analyzing relevant contractual clauses...'})}\n\n"
             
             final_state = {}
-            # Set recursion limit to 12 for streaming as well
             for output in agent_graph.stream(agent_inputs, {"recursion_limit": 12}):
                 if not output or not isinstance(output, dict):
                     continue
@@ -240,7 +262,7 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             _record_audit_and_messages(db, thread_id, request_data.query, final_state, duration_ms)
 
-            # 3. Final Payload
+            # 3. Final Payload Integration
             key_actions_dumped = [
                 action.model_dump() if hasattr(action, "model_dump") else action 
                 for action in final_state.get("key_actions", [])
@@ -256,7 +278,8 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
                 "risk_level": str(final_state.get("risk_level", "UNKNOWN")),
                 "confidence_score": int(final_state.get("confidence_score", 0)),
                 "key_actions": key_actions_dumped,
-                "verification_attempts": int(final_state.get("verification_attempts", 1))
+                "verification_attempts": int(final_state.get("verification_attempts", 1)),
+                "sources": sources # THE FIX: Next.js citations payload is finally attached!
             }
             yield f"event: complete\ndata: {json.dumps(complete_payload)}\n\n"
 

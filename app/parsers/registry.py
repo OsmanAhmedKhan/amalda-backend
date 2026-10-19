@@ -1,13 +1,13 @@
 import magic
 import zipfile
-from typing import List, Dict, Type
+from typing import List, Dict, Type, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 @dataclass
 class ExtractedNode:
     text: str
-    metadata: Dict[str, str]
+    metadata: Dict[str, Any] # Upgraded to Any to support integer page_numbers
 
 @dataclass
 class ExtractedDocument:
@@ -16,7 +16,8 @@ class ExtractedDocument:
 
 class BaseExtractor(ABC):
     @abstractmethod
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
+    def extract(self, file_path: str, filename: str):
+        # We allow returning either ExtractedDocument or ParsedDocument
         pass
 
 class ExtractorRegistry:
@@ -45,7 +46,7 @@ class ExtractorRegistry:
                 
         return mime
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
+    def extract(self, file_path: str, filename: str):
         mime_type = self.get_mime_type(file_path)
         
         if mime_type.startswith("text/") or mime_type in ["inode/x-empty", "application/csv"]:
