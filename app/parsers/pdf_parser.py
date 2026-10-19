@@ -8,6 +8,7 @@ from PIL import Image
 import io
 from typing import List, Optional
 from pydantic import BaseModel
+from fastapi import HTTPException
 
 from app.core.insforge import insforge
 
@@ -121,19 +122,32 @@ class LegalDocumentParser:
             for i in range(start_page, total_pages, batch_size):
                 end_page = min(i + batch_size, total_pages)
                 pages_data = []
+                batch_has_text = False # Tracker for strict validation
                 
                 # Load only the slice into memory
                 for page_num in range(i, end_page):
                     text = pdf.pages[page_num].extract_text()
                     if not text or len(text.strip()) < 50:
                         text = self._perform_ocr_on_page(file_path, page_num)
+                    
+                    clean_text = text.strip() if text else ""
+                    if clean_text:
+                        batch_has_text = True
                         
                     pages_data.append({
                         "page_number": page_num + 1,
-                        "text": text or "",
+                        "text": clean_text,
                         "width": pdf.pages[page_num].width,
                         "height": pdf.pages[page_num].height
                     })
+
+                # STRICT VALIDATION GATE: Prevent silent empty vectorization
+                if not batch_has_text:
+                    logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {file_path}.")
+                    raise HTTPException(
+                        status_code=422, 
+                        detail=f"Unprocessable Entity: PDF extraction yielded no readable text between pages {i} and {end_page}. OCR failed or document is empty."
+                    )
 
                 # Chunk exactly as before
                 nodes = self._semantic_chunking(pages_data, filename)
@@ -157,17 +171,33 @@ class LegalDocumentParser:
         """Legacy compatibility wrapper for older endpoints"""
         logger.info(f"Extracting text from {filename} (Legacy Mode)...")
         pages_data = []
+        document_has_text = False # Tracker for strict validation
+        
         with pdfplumber.open(file_path) as pdf:
             for i, page in enumerate(pdf.pages):
                 text = page.extract_text()
                 if not text or len(text.strip()) < 50:
                     text = self._perform_ocr_on_page(file_path, i)
+                
+                clean_text = text.strip() if text else ""
+                if clean_text:
+                    document_has_text = True
+                    
                 pages_data.append({
                     "page_number": i + 1,
-                    "text": text if text else "",
+                    "text": clean_text,
                     "width": page.width,
                     "height": page.height
                 })
+
+        # STRICT VALIDATION GATE
+        if not document_has_text:
+            logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {file_path}.")
+            raise HTTPException(
+                status_code=422, 
+                detail="Unprocessable Entity: PDF extraction yielded no readable text. If this is a scanned document, OCR is required."
+            )
+
         nodes = self._semantic_chunking(pages_data, filename)
         logger.info(f"Generated {len(nodes)} dense legal nodes.")
         return ParsedDocument(filename=filename, nodes=nodes)
