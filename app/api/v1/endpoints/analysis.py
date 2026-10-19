@@ -53,7 +53,7 @@ def resilient_agent_invoke(agent_graph, inputs):
     # Set recursion limit to 12 (allows 1 full pass + ~2 reflexion loops)
     return agent_graph.invoke(inputs, {"recursion_limit": 12})
 
-def _retrieve_context_and_history(query: str, thread_id: str | None, vector_db, db: Session):
+def _retrieve_context_and_history(query: str, thread_id: str | None, document_ids: list | None, vector_db, db: Session):
     # 1. Resolve or create thread
     if thread_id:
         thread = db.query(ConversationThread).filter(ConversationThread.id == thread_id).first()
@@ -77,8 +77,8 @@ def _retrieve_context_and_history(query: str, thread_id: str | None, vector_db, 
     )
     conversation_history = [{"role": m.role, "content": _extract_text(m.content)} for m in history_records]
 
-    # 3. Vector DB Search
-    results = vector_db.search(query, n_results=4)
+    # 3. Vector DB Search (NOW WITH FILTERS)
+    results = vector_db.search(query, document_ids=document_ids, n_results=4)
     if not results or not results.get('documents') or not results['documents'][0]:
         raise HTTPException(status_code=404, detail="No relevant context found in documents.")
 
@@ -156,7 +156,7 @@ async def analyze_query(request: Request, request_data: QueryRequest, db: Sessio
     try:
         vector_db = request.app.state.db
         thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-            request_data.query, request_data.thread_id, vector_db, db
+            request_data.query, request_data.thread_id, request_data.document_ids, vector_db, db
         )
 
         agent_inputs = {
@@ -179,7 +179,6 @@ async def analyze_query(request: Request, request_data: QueryRequest, db: Sessio
             for action in final_state.get("key_actions", [])
         ]
 
-        # NOTE TO BACKEND DEV: Ensure your AnalysisResponse in api_models.py accepts "sources: list = []"
         response_data = {
             "thread_id": thread_id,
             "query": request_data.query,
@@ -217,7 +216,7 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
             # 1. State: Retrieval
             yield f"event: status\ndata: {json.dumps({'stage': 'retrieval', 'message': 'Searching document vector index...'})}\n\n"
             thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-                request_data.query, request_data.thread_id, vector_db, db
+                request_data.query, request_data.thread_id, request_data.document_ids, vector_db, db
             )
 
             agent_inputs = {

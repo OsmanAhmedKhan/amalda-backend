@@ -9,6 +9,8 @@ class ActionableAdvice(BaseModel):
 class QueryRequest(BaseModel):
     query: str = Field(..., description="The user's legal question or follow-up.")
     thread_id: Optional[str] = Field(None, description="Optional UUID to continue an existing conversation memory.")
+    document_ids: Optional[List[str]] = Field(None, description="Optional list of filenames to restrict the search to.")
+    strict_mode: Optional[bool] = Field(False, description="Enforce strict zero-hallucination parameters.")
 
 class AnalysisResponse(BaseModel):
     thread_id: str
