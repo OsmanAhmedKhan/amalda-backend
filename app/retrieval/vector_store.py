@@ -119,21 +119,29 @@ class VectorDatabase:
             raise Exception(f"Failed to delete embeddings for {filename}: {str(e)}")
 
     def search(self, query: str, document_ids: List[str] = None, n_results: int = 10, lambda_mult: float = 0.5) -> Dict[str, Any]:
-        """Retrieves top chunks using Dense + Sparse Fusion (RRF) with optional Document filtering."""
+        """Retrieves top chunks using Dense + Sparse Fusion (RRF) with robust Document filtering."""
         pool_size = max(20, n_results * 3)
         
-        # THE FIX: Apply the strict filename filter requested by the frontend
+        # THE FIX: Bulletproof `$or` query to catch the file regardless of how legacy/new metadata was named
         where_clause = None
         if document_ids and len(document_ids) > 0:
             if len(document_ids) == 1:
-                where_clause = {"filename": document_ids[0]}
+                target_doc = document_ids[0]
+                where_clause = {
+                    "$or": [
+                        {"filename": target_doc},
+                        {"document_id": target_doc},
+                        {"source": target_doc}
+                    ]
+                }
             else:
+                # If multiple docs are requested simultaneously, fallback to standard $in
                 where_clause = {"filename": {"$in": document_ids}}
         
         dense_results = self.collection.query(
             query_texts=[query],
             n_results=pool_size,
-            where=where_clause, # Safely filters to exact documents
+            where=where_clause, # Safely searches all possible metadata key variations
             include=["documents", "metadatas", "distances"]
         )
         
