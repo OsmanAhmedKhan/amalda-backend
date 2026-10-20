@@ -15,6 +15,8 @@ from app.schemas.api_models import UploadResponse, ErrorSchema
 from app.db.session import get_db
 from app.db.models import DocumentRecord, DocStatus, utc_now
 from app.core.rate_limit import limiter
+# NEW: Import InsForge to get granular page-by-page progress
+from app.core.insforge import insforge
 
 logger = logging.getLogger("AMALDA_API")
 router = APIRouter()
@@ -85,11 +87,26 @@ async def list_documents(
 
 @router.get("/{filename}/status")
 async def get_document_status(filename: str, db: Session = Depends(get_db)):
+    """
+    THE FIX: Now returns granular page-by-page progress so the frontend can 
+    display a loading bar and wait for `is_ready: true` before allowing questions.
+    """
     safe_name = secure_filename(filename)
     record = db.query(DocumentRecord).filter(DocumentRecord.filename == safe_name, DocumentRecord.deleted_at == None).first()
     if not record:
         raise HTTPException(status_code=404, detail="Document not found.")
-    return {"filename": record.filename, "status": record.status.value if record.status else None, "error_message": record.error_message}
+        
+    # Fetch granular progress from our Resumable PDF Parser
+    job_status = insforge.get_job_status(safe_name)
+    
+    return {
+        "filename": record.filename, 
+        "status": record.status.value if record.status else None, 
+        "error_message": record.error_message,
+        "total_pages": job_status["total_pages"] if job_status else 1,
+        "processed_pages": job_status["processed_pages"] if job_status else 0,
+        "is_ready": record.status == DocStatus.COMPLETED
+    }
 
 @router.get("/{filename}/chunks")
 async def get_document_chunks(filename: str, request: Request, db: Session = Depends(get_db)):
@@ -131,7 +148,6 @@ async def delete_document(filename: str, request: Request, db: Session = Depends
         logger.error(f"Failed to delete document {safe_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- NEW: SECURE DOWNLOAD ENDPOINT FOR SPLIT-SCREEN RAG ---
 @router.get("/{filename}/download")
 async def download_document(filename: str, api_key: str = Depends(verify_api_key)):
     """
@@ -193,7 +209,8 @@ async def upload_document(request: Request, file: UploadFile = File(...), db: Se
             db.add(new_doc)
             db.commit()
             
-        return UploadResponse(filename=safe_filename, message="Document uploaded successfully! Parsing queued.")
+        # Explicit contract instruction for the UI developer
+        return UploadResponse(filename=safe_filename, message="Upload complete! IMPORTANT: Poll the /status endpoint until is_ready=true before allowing user queries.")
     except HTTPException:
         raise
     except Exception as e:

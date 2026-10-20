@@ -51,6 +51,22 @@ from app.parsers.pdf_parser import LegalDocumentParser
 from app.agents.graph import build_agent_graph
 from app.workers.db_queue import document_worker_loop, sweep_orphaned_tasks
 
+async def resilient_worker_launcher(app_state):
+    """
+    THE FIX: Makes the background worker immortal. 
+    If a corrupted PDF causes the worker thread to crash, it instantly reboots 
+    without taking down the whole FastAPI application.
+    """
+    while True:
+        try:
+            await document_worker_loop(app_state)
+        except asyncio.CancelledError:
+            logger.info("Worker thread cleanly cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Worker loop crashed fatally: {e}. Restarting in 5s...")
+            await asyncio.sleep(5)
+
 # --- 2. LIFESPAN MANAGEMENT ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,8 +78,8 @@ async def lifespan(app: FastAPI):
     # Run Crash Recovery
     sweep_orphaned_tasks()
     
-    # Start the Atomic Worker Task
-    worker_task = asyncio.create_task(document_worker_loop(app.state))
+    # Start the Immortal Worker Task
+    worker_task = asyncio.create_task(resilient_worker_launcher(app.state))
     
     logger.info("🟢 STARTUP: All systems operational.")
     
