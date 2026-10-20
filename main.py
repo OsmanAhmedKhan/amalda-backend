@@ -16,16 +16,13 @@ from sqlalchemy.orm import Session
 # --- 1. LOGGING & DB SETUP ---
 os.makedirs("./logs", exist_ok=True)
 
-# Define an Async-Safe Context Variable for the Request ID
 request_id_context_var = contextvars.ContextVar("request_id", default="SYSTEM")
 
 class RequestIDFilter(logging.Filter):
-    """Injects the async-safe request ID into every log record."""
     def filter(self, record):
         record.request_id = request_id_context_var.get()
         return True
 
-# Initialize Global Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] - [ReqID: %(request_id)s] - %(message)s",
@@ -35,7 +32,6 @@ logging.basicConfig(
     ]
 )
 
-# CRITICAL FIX: Attach the filter to the ROOT handlers so third-party logs (httpx, numexpr) don't crash
 for handler in logging.root.handlers:
     handler.addFilter(RequestIDFilter())
 
@@ -52,11 +48,6 @@ from app.agents.graph import build_agent_graph
 from app.workers.db_queue import document_worker_loop, sweep_orphaned_tasks
 
 async def resilient_worker_launcher(app_state):
-    """
-    THE FIX: Makes the background worker immortal. 
-    If a corrupted PDF causes the worker thread to crash, it instantly reboots 
-    without taking down the whole FastAPI application.
-    """
     while True:
         try:
             await document_worker_loop(app_state)
@@ -67,7 +58,6 @@ async def resilient_worker_launcher(app_state):
             logger.error(f"Worker loop crashed fatally: {e}. Restarting in 5s...")
             await asyncio.sleep(5)
 
-# --- 2. LIFESPAN MANAGEMENT ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🟢 STARTUP: Initializing engines securely...")
@@ -75,12 +65,8 @@ async def lifespan(app: FastAPI):
     app.state.parser = LegalDocumentParser()
     app.state.agent_graph = build_agent_graph()
     
-    # Run Crash Recovery
     sweep_orphaned_tasks()
-    
-    # Start the Immortal Worker Task
     worker_task = asyncio.create_task(resilient_worker_launcher(app.state))
-    
     logger.info("🟢 STARTUP: All systems operational.")
     
     yield
@@ -96,7 +82,6 @@ async def lifespan(app: FastAPI):
     app.state.parser = None
     app.state.agent_graph = None
 
-# --- 3. APP INITIALIZATION ---
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Enterprise Backend for Multi-Agent Legal Document Analysis",
@@ -104,13 +89,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# --- 4. ENTERPRISE MIDDLEWARE ---
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
-        
-        # Safely bind the request ID to the async context
         token = request_id_context_var.set(request_id)
         
         try:
@@ -118,7 +100,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = request_id
             return response
         finally:
-            # Clean up context after request finishes to prevent memory leaks
             request_id_context_var.reset(token)
 
 app.add_middleware(RequestIDMiddleware)
@@ -129,19 +110,18 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins, 
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# --- 5. ROUTER REGISTRATION ---
 app.include_router(api_router, prefix="/api/v1")
 
-# --- 6. DEEP HEALTH CHECK ---
-@app.get("/")
-@app.get("/health")
+# --- 6. DEEP HEALTH CHECK (FIXED METHODS FOR UPTIMEROBOT) ---
+@app.api_route("/", methods=["GET", "HEAD"])
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check(db: Session = Depends(get_db)):
     health_status = {
         "system": settings.PROJECT_NAME,

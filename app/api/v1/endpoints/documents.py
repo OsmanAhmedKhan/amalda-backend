@@ -1,11 +1,11 @@
-import os
 import hashlib
 import logging
 import magic
 import zipfile
+import io
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
@@ -15,7 +15,6 @@ from app.schemas.api_models import UploadResponse, ErrorSchema
 from app.db.session import get_db
 from app.db.models import DocumentRecord, DocStatus, utc_now
 from app.core.rate_limit import limiter
-# NEW: Import InsForge to get granular page-by-page progress
 from app.core.insforge import insforge
 
 logger = logging.getLogger("AMALDA_API")
@@ -32,18 +31,12 @@ ALLOWED_MIME_TYPES = [
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ]
 
-def calculate_file_hash(file_path: str) -> str:
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
-
-def secure_mime_sniff(file_path: str) -> str:
-    mime = magic.from_file(file_path, mime=True)
+def secure_mime_sniff_bytes(file_bytes: bytes) -> str:
+    """Safely determines MIME type directly from a memory buffer."""
+    mime = magic.from_buffer(file_bytes[:2048], mime=True)
     if mime in ['application/zip', 'application/octet-stream', 'application/x-zip-compressed']:
         try:
-            with zipfile.ZipFile(file_path, 'r') as zf:
+            with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as zf:
                 namelist = zf.namelist()
                 if 'word/document.xml' in namelist:
                     return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -87,18 +80,12 @@ async def list_documents(
 
 @router.get("/{filename}/status")
 async def get_document_status(filename: str, db: Session = Depends(get_db)):
-    """
-    THE FIX: Now returns granular page-by-page progress so the frontend can 
-    display a loading bar and wait for `is_ready: true` before allowing questions.
-    """
     safe_name = secure_filename(filename)
     record = db.query(DocumentRecord).filter(DocumentRecord.filename == safe_name, DocumentRecord.deleted_at == None).first()
     if not record:
         raise HTTPException(status_code=404, detail="Document not found.")
         
-    # Fetch granular progress from our Resumable PDF Parser
     job_status = insforge.get_job_status(safe_name)
-    
     return {
         "filename": record.filename, 
         "status": record.status.value if record.status else None, 
@@ -124,7 +111,6 @@ async def get_document_chunks(filename: str, request: Request, db: Session = Dep
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch chunks for {safe_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{filename}")
@@ -134,66 +120,57 @@ async def delete_document(filename: str, request: Request, db: Session = Depends
         record = db.query(DocumentRecord).filter(DocumentRecord.filename == safe_name).first()
         if not record:
             raise HTTPException(status_code=404, detail="Document not found.")
+        
         record.deleted_at = utc_now()
         db.commit()
+        
         vector_db = request.app.state.db
         purged_count = vector_db.delete_document_embeddings(safe_name)
-        file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        
+        # Remove from S3
+        insforge.delete_file(safe_name)
+        
         logger.info(f"🗑️ Successfully soft-deleted document '{safe_name}'.")
         return {"status": "success", "filename": safe_name, "embeddings_purged": purged_count, "message": f"Document '{safe_name}' deleted."}
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to delete document {safe_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{filename}/download")
 async def download_document(filename: str, api_key: str = Depends(verify_api_key)):
     """
-    Securely serves a PDF inline for the frontend viewer.
-    Requires X-API-Key header.
+    Securely redirects to a temporary S3 presigned URL.
+    Offloads massive PDF streaming bandwidth from FastAPI to S3.
     """
     safe_name = secure_filename(filename)
-    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"Document '{safe_name}' not found in storage.")
-        
-    return FileResponse(
-        path=file_path, 
-        filename=safe_name, 
-        media_type="application/pdf", 
-        content_disposition_type="inline"  # Crucial: Enforces inline browser rendering
-    )
+    try:
+        presigned_url = insforge.generate_presigned_url(safe_name, expires_in=3600)
+        return RedirectResponse(url=presigned_url)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Failed to generate download link: {str(e)}")
 
 @router.post("/upload", response_model=UploadResponse)
 @limiter.limit("10/minute")
 async def upload_document(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
     safe_filename = secure_filename(file.filename)
-    file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
     
     try:
-        # Stream file to disk to allow safe ZIP inspection
-        file_size = 0
-        with open(file_path, "wb") as buffer:
-            for chunk in iter(lambda: file.file.read(4096), b""):
-                file_size += len(chunk)
-                if file_size > MAX_FILE_SIZE_BYTES:
-                    buffer.close()
-                    os.remove(file_path)
-                    raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
-                buffer.write(chunk)
+        # Load file safely into memory
+        file_bytes = await file.read()
+        if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
         
-        # Security Gate: Sniff MIME structurally
-        mime_type = secure_mime_sniff(file_path)
+        # Sniff MIME directly from memory bytes
+        mime_type = secure_mime_sniff_bytes(file_bytes)
         is_text = mime_type.startswith("text/") or mime_type in ["inode/x-empty", "application/csv"]
         
         if mime_type not in ALLOWED_MIME_TYPES and not is_text:
-            os.remove(file_path) # Nuke invalid file immediately
             raise HTTPException(status_code=415, detail=f"Unsupported or unsafe file format: {mime_type}")
         
-        file_hash = calculate_file_hash(file_path)
+        # Stream bytes straight to InsForge S3
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        insforge.save_file_bytes(safe_filename, file_bytes)
+        
         existing_doc = db.query(DocumentRecord).filter((DocumentRecord.file_hash == file_hash) | (DocumentRecord.filename == safe_filename)).first()
         
         if existing_doc:
@@ -209,8 +186,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), db: Se
             db.add(new_doc)
             db.commit()
             
-        # Explicit contract instruction for the UI developer
-        return UploadResponse(filename=safe_filename, message="Upload complete! IMPORTANT: Poll the /status endpoint until is_ready=true before allowing user queries.")
+        return UploadResponse(filename=safe_filename, message="Upload complete! Poll the /status endpoint until is_ready=true.")
     except HTTPException:
         raise
     except Exception as e:

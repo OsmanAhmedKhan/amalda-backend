@@ -12,7 +12,6 @@ class SafeGoogleEmbedder(EmbeddingFunction):
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
         
-        # Ensure clean model name regardless of what is in Render environment variables
         raw_model = settings.EMBEDDING_MODEL.replace("models/", "")
         if not raw_model or raw_model == "all-MiniLM-L6-v2":
             raw_model = "text-embedding-004"
@@ -24,7 +23,6 @@ class SafeGoogleEmbedder(EmbeddingFunction):
         if not input:
             return []
             
-        # Format request exactly as Google's REST API expects
         requests_payload = []
         for text in input:
             requests_payload.append({
@@ -43,7 +41,6 @@ class SafeGoogleEmbedder(EmbeddingFunction):
             
         data = response.json()
         
-        # Extract embeddings
         embeddings = []
         for item in data.get("embeddings", []):
             embeddings.append(item["values"])
@@ -53,15 +50,10 @@ class SafeGoogleEmbedder(EmbeddingFunction):
 
 class VectorDatabase:
     def __init__(self):
-        self.persist_directory = settings.CHROMA_PERSIST_DIR
+        # 🟢 STATELSS ARCHITECTURE: Use purely in-memory Vector Storage.
+        self.client = chromadb.EphemeralClient()
         
-        # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(path=self.persist_directory)
-        
-        # Initialize our safe custom wrapper
         self.embedding_fn = SafeGoogleEmbedder()
-        
-        # Get or create the main legal document collection
         self.collection = self.client.get_or_create_collection(
             name="legal_documents",
             embedding_function=self.embedding_fn,
@@ -69,7 +61,6 @@ class VectorDatabase:
         )
 
     def index_document(self, parsed_doc) -> None:
-        """Indexes dense chunks into ChromaDB with accurate page numbers."""
         ids = []
         documents = []
         metadatas = []
@@ -79,7 +70,6 @@ class VectorDatabase:
             ids.append(chunk_id)
             documents.append(node.text)
             
-            # Robust Multi-Schema Page Number Resolution
             page_num = 1
             if hasattr(node, "bounding_box") and hasattr(node.bounding_box, "page_number"):
                 page_num = node.bounding_box.page_number
@@ -98,7 +88,6 @@ class VectorDatabase:
             }
             metadatas.append(meta)
             
-        # Batch insert (Google embedder supports up to 100 per batch)
         batch_size = 90 
         for i in range(0, len(ids), batch_size):
             self.collection.add(
@@ -108,7 +97,6 @@ class VectorDatabase:
             )
 
     def delete_document_embeddings(self, filename: str) -> int:
-        """Removes all vector embeddings associated with a specific document."""
         try:
             results = self.collection.get(where={"filename": filename}, include=[])
             if results and results["ids"]:
@@ -119,10 +107,8 @@ class VectorDatabase:
             raise Exception(f"Failed to delete embeddings for {filename}: {str(e)}")
 
     def search(self, query: str, document_ids: List[str] = None, n_results: int = 10, lambda_mult: float = 0.5) -> Dict[str, Any]:
-        """Retrieves top chunks using Dense + Sparse Fusion (RRF) with robust Document filtering."""
         pool_size = max(20, n_results * 3)
         
-        # THE FIX: Bulletproof `$or` query to catch the file regardless of how legacy/new metadata was named
         where_clause = None
         if document_ids and len(document_ids) > 0:
             if len(document_ids) == 1:
@@ -135,13 +121,12 @@ class VectorDatabase:
                     ]
                 }
             else:
-                # If multiple docs are requested simultaneously, fallback to standard $in
                 where_clause = {"filename": {"$in": document_ids}}
         
         dense_results = self.collection.query(
             query_texts=[query],
             n_results=pool_size,
-            where=where_clause, # Safely searches all possible metadata key variations
+            where=where_clause,
             include=["documents", "metadatas", "distances"]
         )
         

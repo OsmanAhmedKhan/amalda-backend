@@ -34,16 +34,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire backend directory into the container
 COPY . .
 
-# Ensure data directories exist AND have correct read/write permissions for Render
-RUN mkdir -p /app/data/uploads /app/data/chroma_db /app/logs \
-    && chmod -R 777 /app/data /app/logs
+# Ensure logging directory exists (No more /app/data local persistence needed)
+RUN mkdir -p /app/logs && chmod -R 777 /app/logs
 
 # Expose the API port
 EXPOSE 10000
 
-# Health check to ensure the container restarts if the API crashes
+# Health check (Using -I to perform a HEAD request natively)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:10000/health || exit 1
+    CMD curl -f -I http://localhost:10000/health || exit 1
 
 # Start the application using Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
