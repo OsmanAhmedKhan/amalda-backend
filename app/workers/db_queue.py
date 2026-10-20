@@ -5,6 +5,9 @@ from sqlalchemy import text
 from app.db.session import SessionLocal
 from app.core.config import settings
 
+# Import InsForge to pull bytes from S3
+from app.core.insforge import insforge
+
 # Import the Format-Agnostic Registry
 from app.parsers.extractors import registry
 
@@ -24,7 +27,7 @@ def sweep_orphaned_tasks():
         db.close()
 
 async def document_worker_loop(app_state):
-    """Durable, multi-worker safe queue processor using Atomic SQLite locks."""
+    """Durable, multi-worker safe queue processor using Atomic Postgres locks."""
     logger.info("⚙️ Background task worker initialized and polling...")
     while True:
         db = SessionLocal()
@@ -48,19 +51,15 @@ async def document_worker_loop(app_state):
                 logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename}")
                 
                 try:
-                    # Dynamically read from configured UPLOAD_DIR
-                    file_path = os.path.join(settings.UPLOAD_DIR, filename)
-                    
-                    if not os.path.exists(file_path):
-                        # Fallback check in case relative path was used
-                        alt_path = os.path.join("./data/uploads", filename)
-                        if os.path.exists(alt_path):
-                            file_path = alt_path
-                        else:
-                            raise FileNotFoundError(f"Uploaded file not found at {file_path}")
+                    # 🟢 STATELESS FIX: Download bytes directly from InsForge S3 into RAM
+                    try:
+                        file_bytes = insforge.get_file_bytes(filename)
+                        logger.info(f"Downloaded {len(file_bytes)} bytes from S3 for {filename}")
+                    except Exception as s3_err:
+                        raise FileNotFoundError(f"Uploaded file not found in InsForge S3: {s3_err}")
 
-                    # Format-Agnostic Registry Extraction
-                    parsed_doc = registry.extract(file_path, filename)
+                    # Format-Agnostic Registry Extraction (Passes bytes instead of file_path)
+                    parsed_doc = registry.extract(file_bytes=file_bytes, filename=filename)
                     
                     # Validate that parsed_doc has actual nodes/content
                     if not parsed_doc or not getattr(parsed_doc, "nodes", None):

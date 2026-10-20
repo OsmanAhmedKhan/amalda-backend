@@ -1,7 +1,6 @@
 import os
 import uuid
 import logging
-import pdfplumber
 import pytesseract
 import fitz  # PyMuPDF
 from PIL import Image
@@ -13,7 +12,10 @@ from fastapi import HTTPException
 from app.core.insforge import insforge
 
 logger = logging.getLogger("AMALDA_API")
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# NOTE: Ensure Tesseract is installed in your local environment or Docker container.
+# If running on Linux (Docker), remove the Windows path below.
+if os.name == 'nt':
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 class BoundingBox(BaseModel):
     page_number: int
@@ -36,9 +38,10 @@ class LegalDocumentParser:
     def __init__(self):
         pass
 
-    def _perform_ocr_on_page(self, pdf_path: str, page_index: int) -> str:
+    def _perform_ocr_on_page(self, pdf_bytes: bytes, page_index: int) -> str:
+        """Performs OCR directly from a memory stream."""
         try:
-            doc = fitz.open(pdf_path)
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             page = doc.load_page(page_index)
             pix = page.get_pixmap(dpi=300)
             img = Image.open(io.BytesIO(pix.tobytes()))
@@ -102,9 +105,9 @@ class LegalDocumentParser:
             )
         )
 
-    def parse_pdf_incrementally(self, file_path: str, filename: str, vector_db, batch_size=50):
+    def parse_pdf_incrementally(self, file_bytes: bytes, filename: str, vector_db, batch_size=50):
         """
-        Processes 5000+ page PDFs safely without loading the whole file into RAM.
+        🟢 STATELESS: Processes PDFs safely from memory bytes.
         Uses InsForge to track progress so it can resume if the server crashes.
         """
         job_status = insforge.get_job_status(filename)
@@ -112,8 +115,8 @@ class LegalDocumentParser:
         
         logger.info(f"Starting resumable ingestion for {filename} at page {start_page}...")
 
-        with pdfplumber.open(file_path) as pdf:
-            total_pages = len(pdf.pages)
+        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+            total_pages = len(pdf)
             
             if not job_status:
                 insforge.update_job_status(filename, 0, total_pages, 'PROCESSING')
@@ -124,23 +127,27 @@ class LegalDocumentParser:
                 batch_has_text = False
                 
                 for page_num in range(i, end_page):
-                    text = pdf.pages[page_num].extract_text()
+                    page = pdf.load_page(page_num)
+                    text = page.get_text("text")
+                    
                     if not text or len(text.strip()) < 50:
-                        text = self._perform_ocr_on_page(file_path, page_num)
+                        text = self._perform_ocr_on_page(file_bytes, page_num)
                     
                     clean_text = text.strip() if text else ""
                     if clean_text:
                         batch_has_text = True
                         
+                    # Handle page bounds safely
+                    rect = page.rect
                     pages_data.append({
                         "page_number": page_num + 1,
                         "text": clean_text,
-                        "width": pdf.pages[page_num].width,
-                        "height": pdf.pages[page_num].height
+                        "width": rect.width if rect else 500,
+                        "height": rect.height if rect else 800
                     })
 
                 if not batch_has_text:
-                    logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {file_path}.")
+                    logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {filename}.")
                     raise HTTPException(
                         status_code=422, 
                         detail=f"Unprocessable Entity: PDF extraction yielded no readable text between pages {i} and {end_page}. OCR failed or document is empty."
@@ -160,31 +167,34 @@ class LegalDocumentParser:
         insforge.update_job_status(filename, total_pages, total_pages, 'COMPLETED')
         logger.info(f"✅ Fully completed processing {filename}.")
         
-    def parse_pdf(self, file_path: str, filename: str) -> ParsedDocument:
-        """Legacy compatibility wrapper for older endpoints"""
-        logger.info(f"Extracting text from {filename} (Legacy Mode)...")
+    def parse_pdf(self, file_bytes: bytes, filename: str) -> ParsedDocument:
+        """🟢 STATELESS: Legacy compatibility wrapper for older endpoints"""
+        logger.info(f"Extracting text from {filename} (Memory Stream Mode)...")
         pages_data = []
         document_has_text = False
         
-        with pdfplumber.open(file_path) as pdf:
-            for i, page in enumerate(pdf.pages):
-                text = page.extract_text()
+        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+            for i in range(len(pdf)):
+                page = pdf.load_page(i)
+                text = page.get_text("text")
+                
                 if not text or len(text.strip()) < 50:
-                    text = self._perform_ocr_on_page(file_path, i)
+                    text = self._perform_ocr_on_page(file_bytes, i)
                 
                 clean_text = text.strip() if text else ""
                 if clean_text:
                     document_has_text = True
                     
+                rect = page.rect
                 pages_data.append({
                     "page_number": i + 1,
                     "text": clean_text,
-                    "width": page.width,
-                    "height": page.height
+                    "width": rect.width if rect else 500,
+                    "height": rect.height if rect else 800
                 })
 
         if not document_has_text:
-            logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {file_path}.")
+            logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {filename}.")
             raise HTTPException(
                 status_code=422, 
                 detail="Unprocessable Entity: PDF extraction yielded no readable text. If this is a scanned document, OCR is required."

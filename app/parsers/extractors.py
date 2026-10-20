@@ -1,4 +1,5 @@
 import os
+import io
 import pymupdf
 import pytesseract
 import docx
@@ -11,6 +12,7 @@ from app.parsers.registry import BaseExtractor, ExtractedDocument, ExtractedNode
 # Import our robust PDF Parser to serve as the main engine for PDFs
 from app.parsers.pdf_parser import LegalDocumentParser
 
+# Adjust tesseract path if running locally on a Windows PC
 TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 if os.path.exists(TESSERACT_PATH):
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
@@ -19,30 +21,28 @@ class TextExtractor(BaseExtractor):
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+    def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        # Decode raw bytes directly to string
+        text = file_bytes.decode("utf-8", errors="replace")
         chunks = self.splitter.split_text(text)
-        # Inject page_number: 1 so frontend citations don't break
         nodes = [ExtractedNode(text=chunk, metadata={"page_number": 1, "page_label": "1", "source": filename, "format": "text"}) for chunk in chunks]
         return ExtractedDocument(filename=filename, nodes=nodes)
 
 class PDFExtractor(BaseExtractor):
     def __init__(self):
-        # We delegate entirely to our strict, enterprise PDF parser
         self.robust_parser = LegalDocumentParser()
 
-    def extract(self, file_path: str, filename: str):
-        # By returning the ParsedDocument natively, we preserve BoundingBoxes and Page Numbers!
-        return self.robust_parser.parse_pdf(file_path, filename)
+    def extract(self, file_bytes: bytes, filename: str):
+        return self.robust_parser.parse_pdf(file_bytes, filename)
 
 class ImageExtractor(BaseExtractor):
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
+    def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
         Image.MAX_IMAGE_PIXELS = 100000000
-        img = Image.open(file_path)
+        # Load Image from Memory
+        img = Image.open(io.BytesIO(file_bytes))
         text = pytesseract.image_to_string(img)
         if not text.strip():
             text = "[No readable text found in image]"
@@ -54,8 +54,9 @@ class DocxExtractor(BaseExtractor):
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
-        doc = docx.Document(file_path)
+    def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        # docx natively accepts BytesIO
+        doc = docx.Document(io.BytesIO(file_bytes))
         full_text = []
         for para in doc.paragraphs:
             if para.text.strip():
@@ -74,8 +75,9 @@ class SpreadsheetExtractor(BaseExtractor):
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
+    def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        # openpyxl natively accepts BytesIO
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         nodes = []
         for i, sheet_name in enumerate(wb.sheetnames):
             sheet = wb[sheet_name]
@@ -88,15 +90,16 @@ class SpreadsheetExtractor(BaseExtractor):
                 text = "\n".join(sheet_text)
                 chunks = self.splitter.split_text(text)
                 for chunk in chunks:
-                    nodes.append(ExtractedNode(text=chunk, metadata={"page_number": i+1, "page_label": f"Sheet: {sheet_name}", "source": filename, "format": "xlsx"}))
+                    nodes. filter(ExtractedNode(text=chunk, metadata={"page_number": i+1, "page_label": f"Sheet: {sheet_name}", "source": filename, "format": "xlsx"}))
         return ExtractedDocument(filename=filename, nodes=nodes)
 
 class PptxExtractor(BaseExtractor):
     def __init__(self):
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
 
-    def extract(self, file_path: str, filename: str) -> ExtractedDocument:
-        prs = pptx.Presentation(file_path)
+    def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
+        # python-pptx natively accepts BytesIO
+        prs = pptx.Presentation(io.BytesIO(file_bytes))
         nodes = []
         for i, slide in enumerate(prs.slides):
             slide_text = []

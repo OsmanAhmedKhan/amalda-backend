@@ -1,5 +1,6 @@
 import magic
 import zipfile
+import io
 from typing import List, Dict, Type, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -7,7 +8,7 @@ from abc import ABC, abstractmethod
 @dataclass
 class ExtractedNode:
     text: str
-    metadata: Dict[str, Any] # Upgraded to Any to support integer page_numbers
+    metadata: Dict[str, Any]
 
 @dataclass
 class ExtractedDocument:
@@ -16,8 +17,8 @@ class ExtractedDocument:
 
 class BaseExtractor(ABC):
     @abstractmethod
-    def extract(self, file_path: str, filename: str):
-        # We allow returning either ExtractedDocument or ParsedDocument
+    def extract(self, file_bytes: bytes, filename: str):
+        # 🟢 STATELESS UPDATE: Replaced file_path with file_bytes
         pass
 
 class ExtractorRegistry:
@@ -27,13 +28,14 @@ class ExtractorRegistry:
     def register(self, mime_type: str, extractor_class: Type[BaseExtractor]):
         self._extractors[mime_type] = extractor_class
 
-    def get_mime_type(self, file_path: str) -> str:
-        mime = magic.from_file(file_path, mime=True)
+    def get_mime_type(self, file_bytes: bytes) -> str:
+        # Sniff MIME type directly from the byte buffer
+        mime = magic.from_buffer(file_bytes[:2048], mime=True)
         
         # OOXML structural inspection: .docx, .xlsx, .pptx are ZIP archives
         if mime in ['application/zip', 'application/octet-stream', 'application/x-zip-compressed']:
             try:
-                with zipfile.ZipFile(file_path, 'r') as zf:
+                with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as zf:
                     namelist = zf.namelist()
                     if 'word/document.xml' in namelist:
                         return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -46,8 +48,8 @@ class ExtractorRegistry:
                 
         return mime
 
-    def extract(self, file_path: str, filename: str):
-        mime_type = self.get_mime_type(file_path)
+    def extract(self, file_bytes: bytes, filename: str):
+        mime_type = self.get_mime_type(file_bytes)
         
         if mime_type.startswith("text/") or mime_type in ["inode/x-empty", "application/csv"]:
             extractor_class = self._extractors.get("text/plain")
@@ -58,6 +60,6 @@ class ExtractorRegistry:
             raise ValueError(f"Unsupported document format: {mime_type}")
             
         extractor = extractor_class()
-        return extractor.extract(file_path, filename)
+        return extractor.extract(file_bytes, filename)
 
 registry = ExtractorRegistry()
