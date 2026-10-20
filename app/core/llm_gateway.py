@@ -26,7 +26,7 @@ GLOBAL_HTTPX_CLIENT = httpx.Client(
     http1=True, 
     http2=False, 
     verify=ssl_context, 
-    timeout=httpx.Timeout(45.0, connect=15.0), # Added explicit connect timeout
+    timeout=httpx.Timeout(45.0, connect=15.0), # Explicit connect timeout
     limits=httpx.Limits(max_keepalive_connections=50, max_connections=100) # Enforced bounds
 )
 
@@ -220,7 +220,6 @@ class EnterpriseLLMGateway:
         return ("PROVIDER_SERVER_ERROR", status_code)
 
     def invoke_with_failover(self, prompt, schema=None, estimated_tokens=500) -> Any:
-        # Format injection logic preserved exactly as validated
         if schema:
             try:
                 schema_dict = schema.model_json_schema()
@@ -240,7 +239,6 @@ class EnterpriseLLMGateway:
         timeout_threshold = 240.0
         
         # AUDIT FIX 2: Bounded Retries
-        # Prevents CPU spin-locking and localized retry storms.
         max_attempts = 15
         attempts = 0
         schema_failures_this_run = 0

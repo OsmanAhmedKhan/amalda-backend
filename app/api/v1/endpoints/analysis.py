@@ -3,14 +3,13 @@ import time
 import uuid
 import logging
 from typing import AsyncGenerator, Any
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_log
 
 from app.schemas.api_models import QueryRequest, AnalysisResponse
 from app.core.rate_limit import limiter
-from app.db.session import get_db, SessionLocal
+from app.db.session import SessionLocal
 from app.db.models import ConversationThread, ChatMessage, QueryAudit
 
 logger = logging.getLogger("AMALDA_API")
@@ -53,29 +52,35 @@ def resilient_agent_invoke(agent_graph, inputs):
     # Set recursion limit to 12 (allows 1 full pass + ~2 reflexion loops)
     return agent_graph.invoke(inputs, {"recursion_limit": 12})
 
-def _retrieve_context_and_history(query: str, thread_id: str | None, document_ids: list | None, vector_db, db: Session):
-    # 1. Resolve or create thread
-    if thread_id:
-        thread = db.query(ConversationThread).filter(ConversationThread.id == thread_id).first()
-        if not thread:
+def _retrieve_context_and_history(query: str, thread_id: str | None, document_ids: list | None, vector_db):
+    """Executes with a short-lived DB session to prevent connection starvation."""
+    db = SessionLocal()
+    try:
+        # 1. Resolve or create thread
+        if thread_id:
+            thread = db.query(ConversationThread).filter(ConversationThread.id == thread_id).first()
+            if not thread:
+                thread = ConversationThread(id=thread_id, title=query[:80])
+                db.add(thread)
+                db.commit()
+        else:
+            thread_id = str(uuid.uuid4())
             thread = ConversationThread(id=thread_id, title=query[:80])
             db.add(thread)
             db.commit()
-    else:
-        thread_id = str(uuid.uuid4())
-        thread = ConversationThread(id=thread_id, title=query[:80])
-        db.add(thread)
-        db.commit()
 
-    # 2. Retrieve conversation history (most recent 6 messages)
-    history_records = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.thread_id == thread_id)
-        .order_by(ChatMessage.created_at.asc())
-        .limit(6)
-        .all()
-    )
-    conversation_history = [{"role": m.role, "content": _extract_text(m.content)} for m in history_records]
+        # 2. Retrieve conversation history (most recent 6 messages)
+        history_records = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.thread_id == thread_id)
+            .order_by(ChatMessage.created_at.asc())
+            .limit(6)
+            .all()
+        )
+        conversation_history = [{"role": m.role, "content": _extract_text(m.content)} for m in history_records]
+    finally:
+        # Close the connection IMMEDIATELY so we don't hold it during vector search or LLM generation
+        db.close()
 
     # 3. Vector DB Search (NOW WITH FILTERS)
     results = vector_db.search(query, document_ids=document_ids, n_results=4)
@@ -83,7 +88,7 @@ def _retrieve_context_and_history(query: str, thread_id: str | None, document_id
         raise HTTPException(status_code=404, detail="No relevant context found in documents.")
 
     evidence_chunks = []
-    sources_payload = [] # NEW: Build the strict frontend citations schema
+    sources_payload = [] 
     
     docs = results['documents'][0]
     ids = results['ids'][0]
@@ -114,49 +119,59 @@ def _retrieve_context_and_history(query: str, thread_id: str | None, document_id
     # Return sources alongside the text so the endpoint can pass it to the client
     return thread_id, evidence_text, conversation_history, sources_payload
 
-def _record_audit_and_messages(db: Session, thread_id: str, query: str, final_state: dict, duration_ms: int):
-    # Save User message
-    user_msg = ChatMessage(thread_id=thread_id, role="user", content=query)
-    db.add(user_msg)
+def _record_audit_and_messages(thread_id: str, query: str, final_state: dict, duration_ms: int):
+    """Executes with a fresh, short-lived DB session AFTER the LLM completes."""
+    db = SessionLocal()
+    try:
+        # Save User message
+        user_msg = ChatMessage(thread_id=thread_id, role="user", content=query)
+        db.add(user_msg)
 
-    # Normalize AI verdict and key actions
-    key_actions_dumped = [
-        action.model_dump() if hasattr(action, "model_dump") else action 
-        for action in final_state.get("key_actions", [])
-    ]
-    
-    final_verdict_str = _extract_text(final_state.get("final_verdict", ""))
+        # Normalize AI verdict and key actions
+        key_actions_dumped = [
+            action.model_dump() if hasattr(action, "model_dump") else action 
+            for action in final_state.get("key_actions", [])
+        ]
+        
+        final_verdict_str = _extract_text(final_state.get("final_verdict", ""))
 
-    ai_msg = ChatMessage(
-        thread_id=thread_id,
-        role="ai",
-        content=final_verdict_str,
-        citations=json.dumps(key_actions_dumped)
-    )
-    db.add(ai_msg)
+        ai_msg = ChatMessage(
+            thread_id=thread_id,
+            role="ai",
+            content=final_verdict_str,
+            citations=json.dumps(key_actions_dumped)
+        )
+        db.add(ai_msg)
 
-    # Save Telemetry Audit
-    audit = QueryAudit(
-        thread_id=thread_id,
-        query_text=query,
-        execution_time_ms=duration_ms,
-        risk_level=str(final_state.get("risk_level", "UNKNOWN")),
-        confidence_score=int(final_state.get("confidence_score", 0)),
-        total_tokens=0
-    )
-    db.add(audit)
-    db.commit()
+        # Save Telemetry Audit
+        audit = QueryAudit(
+            thread_id=thread_id,
+            query_text=query,
+            execution_time_ms=duration_ms,
+            risk_level=str(final_state.get("risk_level", "UNKNOWN")),
+            confidence_score=int(final_state.get("confidence_score", 0)),
+            total_tokens=0
+        )
+        db.add(audit)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to save audit records: {e}")
+    finally:
+        db.close()
 
 @router.post("/", response_model=AnalysisResponse)
 @limiter.limit("5/minute")
-async def analyze_query(request: Request, request_data: QueryRequest, db: Session = Depends(get_db)):
+async def analyze_query(request: Request, request_data: QueryRequest):
     start_time = time.perf_counter()
     logger.info(f"Received analysis query: '{request_data.query}' (Thread: {request_data.thread_id})")
 
     try:
         vector_db = request.app.state.db
+        
+        # 1. Retrieval (Opens and closes DB instantly)
         thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-            request_data.query, request_data.thread_id, request_data.document_ids, vector_db, db
+            request_data.query, request_data.thread_id, request_data.document_ids, vector_db
         )
 
         agent_inputs = {
@@ -172,7 +187,9 @@ async def analyze_query(request: Request, request_data: QueryRequest, db: Sessio
         final_state = resilient_agent_invoke(agent_graph, agent_inputs) or {}
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
-        _record_audit_and_messages(db, thread_id, request_data.query, final_state, duration_ms)
+        
+        # 2. Saving Audit (Opens a fresh, quick DB connection)
+        _record_audit_and_messages(thread_id, request_data.query, final_state, duration_ms)
 
         key_actions_dumped = [
             action.model_dump() if hasattr(action, "model_dump") else action 
@@ -208,15 +225,15 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
     logger.info(f"Starting SSE stream analysis for query: '{request_data.query}'")
     
     async def event_generator() -> AsyncGenerator[str, None]:
-        db = SessionLocal()
         start_time = time.perf_counter()
         try:
             vector_db = request.app.state.db
             
-            # 1. State: Retrieval
             yield f"event: status\ndata: {json.dumps({'stage': 'retrieval', 'message': 'Searching document vector index...'})}\n\n"
+            
+            # 1. State: Retrieval (Opens and closes DB instantly)
             thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-                request_data.query, request_data.thread_id, request_data.document_ids, vector_db, db
+                request_data.query, request_data.thread_id, request_data.document_ids, vector_db
             )
 
             agent_inputs = {
@@ -230,10 +247,10 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
 
             agent_graph = request.app.state.agent_graph
 
-            # 2. State: Streaming LangGraph Node Execution
             yield f"event: status\ndata: {json.dumps({'stage': 'clause_agent', 'message': 'Analyzing relevant contractual clauses...'})}\n\n"
             
             final_state = {}
+            # 2. State: Streaming LangGraph Node Execution (NO DB CONNECTIONS HELD OPEN)
             for output in agent_graph.stream(agent_inputs, {"recursion_limit": 12}):
                 if not output or not isinstance(output, dict):
                     continue
@@ -259,9 +276,10 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
                     final_state.update(node_output)
 
             duration_ms = int((time.perf_counter() - start_time) * 1000)
-            _record_audit_and_messages(db, thread_id, request_data.query, final_state, duration_ms)
+            
+            # 3. Save Audit (Opens a fresh, quick DB connection at the very end)
+            _record_audit_and_messages(thread_id, request_data.query, final_state, duration_ms)
 
-            # 3. Final Payload Integration
             key_actions_dumped = [
                 action.model_dump() if hasattr(action, "model_dump") else action 
                 for action in final_state.get("key_actions", [])
@@ -278,14 +296,12 @@ async def analyze_query_stream(request: Request, request_data: QueryRequest):
                 "confidence_score": int(final_state.get("confidence_score", 0)),
                 "key_actions": key_actions_dumped,
                 "verification_attempts": int(final_state.get("verification_attempts", 1)),
-                "sources": sources # THE FIX: Next.js citations payload is finally attached!
+                "sources": sources # Next.js citations payload is finally attached!
             }
             yield f"event: complete\ndata: {json.dumps(complete_payload)}\n\n"
 
         except Exception as e:
             logger.error(f"Streaming error: {e}", exc_info=True)
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-        finally:
-            db.close()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

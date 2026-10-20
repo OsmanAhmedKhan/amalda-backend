@@ -68,8 +68,6 @@ class InsForgeClient:
 
     def _init_s3(self):
         try:
-            # We initialize boto3 for putting/getting objects, which usually works fine.
-            # Using us-east-1 as the standard signature region for custom S3 endpoints.
             self.s3_client = boto3.client(
                 's3',
                 endpoint_url=settings.INSFORGE_S3_ENDPOINT,
@@ -77,9 +75,6 @@ class InsForgeClient:
                 aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
                 region_name="us-east-1"
             )
-            
-            # Instead of using boto3.head_bucket (which throws 400s on custom endpoints),
-            # we just log that we are bypassing the strict check for InsForge.
             logger.info(f"Initialized InsForge Object Storage for bucket: {settings.INSFORGE_S3_BUCKET}")
             
         except Exception as e:
