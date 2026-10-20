@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: amalda-backend
+    env: docker
+    plan: starter # Required: Free tier does not support persistent disks
+    region: ohio
+    healthCheckPath: /health
+    disk:
+      name: amalda-persistent-storage
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: UPLOAD_DIR
+        value: /app/data/uploads
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/chroma_db
+      - key: LOCAL_DB_PATH
+        value: /app/data/amalda.db
+      - key: PYTHONUNBUFFERED
+        value: "1"

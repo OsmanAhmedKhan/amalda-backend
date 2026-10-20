@@ -34,8 +34,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire backend directory into the container
 COPY . .
 
-# Ensure data directories exist
-RUN mkdir -p /app/data /app/logs
+# Ensure data directories exist AND have correct read/write permissions for Render
+RUN mkdir -p /app/data/uploads /app/data/chroma_db /app/logs \
+    && chmod -R 777 /app/data /app/logs
 
 # Expose the API port
 EXPOSE 10000

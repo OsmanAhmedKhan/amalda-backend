@@ -5,11 +5,12 @@ services:
     build: .
     container_name: amalda_backend
     ports:
-      - "8000:8000"
+      # Maps your local machine's port 8000 to the container's port 10000
+      - "8000:10000"
     env_file:
       - .env
     volumes:
-      # Mount data and logs to persist state outside the container
+      # Mount data and logs to persist state outside the container locally
       - ./data:/app/data
       - ./logs:/app/logs
     restart: unless-stopped
