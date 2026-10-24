@@ -1,9 +1,30 @@
 import os
 import chromadb
 import numpy as np
-from chromadb.utils import embedding_functions
+import httpx
+from chromadb import Documents, EmbeddingFunction, Embeddings
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
+
+# 🔥 DEPENDENCY OPTIMIZATION: Custom HTTP wrapper to bypass Google's broken SDKs
+class GeminiHTTPEmbeddingFunction(EmbeddingFunction):
+    def __init__(self, api_key: str):
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={api_key}"
+        
+    def __call__(self, input: Documents) -> Embeddings:
+        payload = {
+            "requests": [
+                {
+                    "model": "models/text-embedding-004",
+                    "content": {"parts": [{"text": text}]}
+                } for text in input
+            ]
+        }
+        with httpx.Client() as client:
+            response = client.post(self.url, json=payload, timeout=45.0)
+            response.raise_for_status()
+            data = response.json()
+            return [item["values"] for item in data["embeddings"]]
 
 class VectorDatabase:
     def __init__(self):
@@ -11,16 +32,12 @@ class VectorDatabase:
         db_path = os.path.join(os.getcwd(), "chroma_storage")
         self.client = chromadb.PersistentClient(path=db_path)
         
-        # 🔥 MEMORY OPTIMIZATION: Use Gemini API instead of local ONNX model
-        # This saves ~150MB-200MB of RAM instantly on startup.
         gemini_key = os.getenv("GEMINI_API_KEY")
         if not gemini_key:
             raise ValueError("GEMINI_API_KEY is required for remote embeddings to save RAM.")
             
-        self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-            api_key=gemini_key,
-            task_type="RETRIEVAL_DOCUMENT"
-        )
+        # Use our lightweight custom HTTP embedding function
+        self.embedding_fn = GeminiHTTPEmbeddingFunction(api_key=gemini_key)
         
         self.collection = self.client.get_or_create_collection(
             name="legal_documents",
