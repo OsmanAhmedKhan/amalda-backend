@@ -6,12 +6,12 @@ import os
 import time
 import boto3
 import mimetypes
+import re
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from werkzeug.utils import secure_filename
 
 from app.core.config import settings
 from app.core.security import verify_api_key
@@ -34,6 +34,29 @@ ALLOWED_MIME_TYPES = [
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ]
+
+# 🔥 DEPENDENCY OPTIMIZATION: Lightweight secure_filename without Werkzeug
+def secure_filename(filename: str) -> str:
+    """
+    Pass it a filename and it will return a secure version of it.
+    This function will replace all non-alphanumeric characters 
+    (except for '.', '-', and '_') with underscores and remove 
+    leading/trailing whitespace or dots.
+    """
+    if not filename:
+        return ""
+    
+    # Replace non-alphanumeric (and specific allowed chars) with underscores
+    filename = re.sub(r'[^A-Za-z0-9_.-]', '_', filename)
+    
+    # Strip leading/trailing dots and spaces
+    filename = filename.strip(' .')
+    
+    # Ensure it's not empty after cleaning
+    if not filename:
+        filename = "unnamed_file"
+        
+    return filename
 
 # 🔥 DEPENDENCY OPTIMIZATION: Use built-in Python mimetypes and zipfile scanning instead of python-magic
 def secure_mime_sniff_bytes(file_bytes: bytes, filename: str, fallback_mime: str) -> str:
