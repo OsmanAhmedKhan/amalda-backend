@@ -2,29 +2,27 @@
 # AMALDA LEAN REQUIREMENTS (512MB OPTIMIZED)
 # --------------------------------------
 
-# 1. API & Server
 fastapi==0.141.1
 uvicorn==0.52.4
 slowapi==0.1.10
 python-multipart==0.0.32
 
-# 2. Database & Storage (InsForge S3 & Postgres)
 SQLAlchemy==2.0.54
 psycopg[binary]==3.2.3
 psycopg2-binary==2.9.9
 boto3
 
-# 3. PDF Parsing (No OCR overhead)
 pymupdf==1.28.2
+pytesseract==0.3.13
+pillow==12.3.0
 
-# 4. Vector Store & Retrieval
 chromadb==1.5.9
 rank-bm25==0.2.2
 numpy==2.5.2
 
-# 5. Multi-Agent & LLM Gateway
 langchain==1.4.0
 langchain-core==1.6.2
+langchain-text-splitters==1.1.3
 langgraph==1.2.11
 langchain-groq==1.1.3
 langchain-google-genai
@@ -33,7 +31,6 @@ groq==0.37.1
 openai==3.31.0
 google-generativeai>=0.8.4
 
-# 6. Core Utilities
 pydantic==2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3

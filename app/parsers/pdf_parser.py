@@ -3,7 +3,9 @@ import uuid
 import logging
 import gc
 import io
-import pymupdf  # 🔥 No more 'as fitz' alias
+import pytesseract
+from PIL import Image
+import pymupdf
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import HTTPException
@@ -11,6 +13,9 @@ from fastapi import HTTPException
 from app.core.insforge import insforge
 
 logger = logging.getLogger("AMALDA_API")
+
+if os.name == 'nt':
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 class BoundingBox(BaseModel):
     page_number: int
@@ -34,12 +39,29 @@ class LegalDocumentParser:
         pass
 
     def _perform_ocr_on_page(self, pdf_bytes: bytes, page_index: int) -> str:
-        """🔥 MEMORY OPTIMIZATION: Disabled local OCR for 512MB Free Tier."""
-        logger.warning(f"Skipping OCR on page {page_index+1}. Local OCR disabled to prevent OOM on Render.")
-        return ""
+        """🔥 RESTORED OCR WITH MEMORY LIMITS: DPI set to 150 to survive 512MB RAM limit."""
+        try:
+            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+            page = doc.load_page(page_index)
+            # Reduced DPI from 300 to 150 (cuts image RAM usage by 75%)
+            pix = page.get_pixmap(dpi=150)
+            img = Image.open(io.BytesIO(pix.tobytes()))
+            ocr_text = pytesseract.image_to_string(img)
+            
+            # Immediate aggressive cleanup
+            img.close()
+            del img
+            del pix
+            page = None
+            doc.close()
+            gc.collect()
+            
+            return ocr_text
+        except Exception as e:
+            logger.error(f"OCR failed on page {page_index+1}. Error: {e}")
+            return "[OCR FAILED OR UNAVAILABLE]"
 
     def _semantic_chunking(self, pages_data: List[dict], filename: str) -> List[ParsedNode]:
-        """Creates ~1000 character chunks with a 3-line overlap."""
         nodes = []
         current_chunk = []
         current_length = 0
@@ -92,19 +114,12 @@ class LegalDocumentParser:
         )
 
     def parse_pdf_incrementally(self, file_bytes: bytes, filename: str, vector_db, batch_size=10):
-        """
-        🟢 STATELESS: Processes PDFs safely from memory bytes.
-        🔥 MEMORY OPTIMIZATION: Reduced batch_size to 10 and added explicit Garbage Collection.
-        """
         job_status = insforge.get_job_status(filename)
         start_page = job_status["processed_pages"] if job_status else 0
-        
         logger.info(f"Starting resumable ingestion for {filename} at page {start_page}...")
 
-        # 🔥 Uses pymupdf directly instead of fitz
         with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             total_pages = len(pdf)
-            
             if not job_status:
                 insforge.update_job_status(filename, 0, total_pages, 'PROCESSING')
 
@@ -121,10 +136,9 @@ class LegalDocumentParser:
                         text = self._perform_ocr_on_page(file_bytes, page_num)
                     
                     clean_text = text.strip() if text else ""
-                    if clean_text:
+                    if clean_text and clean_text != "[OCR FAILED OR UNAVAILABLE]":
                         batch_has_text = True
                         
-                    # Handle page bounds safely
                     rect = page.rect
                     pages_data.append({
                         "page_number": page_num + 1,
@@ -132,8 +146,7 @@ class LegalDocumentParser:
                         "width": rect.width if rect else 500,
                         "height": rect.height if rect else 800
                     })
-                    
-                    page = None  # Free page object immediately
+                    page = None
 
                 if not batch_has_text:
                     logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {filename}.")
@@ -153,7 +166,6 @@ class LegalDocumentParser:
                 insforge.update_job_status(filename, end_page, total_pages, 'PROCESSING')
                 logger.info(f"✅ Checkpoint Saved: Processed pages {i} to {end_page} of {total_pages}")
                 
-                # 🔥 MEMORY OPTIMIZATION: Force clear variables and run GC to keep RAM < 512MB
                 del pages_data
                 del nodes
                 del tmp
@@ -163,12 +175,10 @@ class LegalDocumentParser:
         logger.info(f"✅ Fully completed processing {filename}.")
         
     def parse_pdf(self, file_bytes: bytes, filename: str) -> ParsedDocument:
-        """🟢 STATELESS: Legacy compatibility wrapper for older endpoints"""
         logger.info(f"Extracting text from {filename} (Memory Stream Mode)...")
         pages_data = []
         document_has_text = False
         
-        # 🔥 Uses pymupdf directly instead of fitz
         with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             for i in range(len(pdf)):
                 page = pdf.load_page(i)
@@ -178,7 +188,7 @@ class LegalDocumentParser:
                     text = self._perform_ocr_on_page(file_bytes, i)
                 
                 clean_text = text.strip() if text else ""
-                if clean_text:
+                if clean_text and clean_text != "[OCR FAILED OR UNAVAILABLE]":
                     document_has_text = True
                     
                 rect = page.rect
@@ -188,20 +198,18 @@ class LegalDocumentParser:
                     "width": rect.width if rect else 500,
                     "height": rect.height if rect else 800
                 })
-                
-                page = None # Free page object
+                page = None 
 
         if not document_has_text:
             logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {filename}.")
             raise HTTPException(
                 status_code=422, 
-                detail="Unprocessable Entity: PDF extraction yielded no readable text. If this is a scanned document, OCR is required."
+                detail="Unprocessable Entity: PDF extraction yielded no readable text. Ensure it is a valid document."
             )
 
         nodes = self._semantic_chunking(pages_data, filename)
         logger.info(f"Generated {len(nodes)} dense legal nodes.")
         
-        # Cleanup
         del pages_data
         gc.collect()
         
