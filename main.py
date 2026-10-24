@@ -119,9 +119,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1")
 
-# --- 6. DEEP HEALTH CHECK (FIXED METHODS FOR UPTIMEROBOT) ---
-@app.api_route("/", methods=["GET", "HEAD"])
-@app.api_route("/health", methods=["GET", "HEAD"])
+# --- 6. DEEP HEALTH CHECK (EXCLUDED HEAD FROM OPENAPI SCHEMA TO AVOID DUPLICATE IDS) ---
+@app.get("/", include_in_schema=False)
+@app.head("/", include_in_schema=False)
+@app.head("/health", include_in_schema=False)
+@app.get("/health", summary="Health Check")
 async def health_check(db: Session = Depends(get_db)):
     health_status = {
         "system": settings.PROJECT_NAME,

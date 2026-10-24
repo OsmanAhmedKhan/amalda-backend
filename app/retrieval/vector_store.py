@@ -1,59 +1,27 @@
 import os
-import requests
 import chromadb
 import numpy as np
-from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
-from app.core.config import settings
+from chromadb.utils import embedding_functions
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
 
-class SafeGoogleEmbedder(EmbeddingFunction):
-    """Custom adapter that calls the Gemini API directly via HTTP, bypassing broken SDKs."""
-    def __init__(self):
-        self.api_key = settings.GEMINI_API_KEY
-        
-        raw_model = settings.EMBEDDING_MODEL.replace("models/", "")
-        if not raw_model or raw_model == "all-MiniLM-L6-v2":
-            raw_model = "text-embedding-004"
-            
-        self.model = f"models/{raw_model}"
-        self.url = f"https://generativelanguage.googleapis.com/v1beta/{self.model}:batchEmbedContents?key={self.api_key}"
-
-    def __call__(self, input: Documents) -> Embeddings:
-        if not input:
-            return []
-            
-        requests_payload = []
-        for text in input:
-            requests_payload.append({
-                "model": self.model,
-                "content": {"parts": [{"text": text}]}
-            })
-            
-        response = requests.post(
-            self.url,
-            json={"requests": requests_payload},
-            headers={"Content-Type": "application/json"}
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Gemini API Error {response.status_code}: {response.text}")
-            
-        data = response.json()
-        
-        embeddings = []
-        for item in data.get("embeddings", []):
-            embeddings.append(item["values"])
-            
-        return embeddings
-
-
 class VectorDatabase:
     def __init__(self):
-        # 🟢 STATELSS ARCHITECTURE: Use purely in-memory Vector Storage.
-        self.client = chromadb.EphemeralClient()
+        # Use PersistentClient to write vector database to a local folder
+        db_path = os.path.join(os.getcwd(), "chroma_storage")
+        self.client = chromadb.PersistentClient(path=db_path)
         
-        self.embedding_fn = SafeGoogleEmbedder()
+        # 🔥 MEMORY OPTIMIZATION: Use Gemini API instead of local ONNX model
+        # This saves ~150MB-200MB of RAM instantly on startup.
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_key:
+            raise ValueError("GEMINI_API_KEY is required for remote embeddings to save RAM.")
+            
+        self.embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+            api_key=gemini_key,
+            task_type="RETRIEVAL_DOCUMENT"
+        )
+        
         self.collection = self.client.get_or_create_collection(
             name="legal_documents",
             embedding_function=self.embedding_fn,

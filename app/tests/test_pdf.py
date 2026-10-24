@@ -1,12 +1,13 @@
 import os
 import pytest
-import fitz
+import pymupdf  # 🔥 Replaced deprecated fitz
 
 def test_real_pdf_ingestion_and_extraction():
     pdf_path = os.path.join(os.getenv("UPLOAD_DIR", "./data/uploads"), "EMPLOYMENT-AGREEMENT.pdf")
     assert os.path.exists(pdf_path), "Target PDF missing"
 
-    doc = fitz.open(pdf_path)
+    # 🔥 Uses pymupdf directly instead of fitz
+    doc = pymupdf.open(pdf_path)
     assert doc.page_count > 0, "PDF is empty"
 
     # Extract all text to verify OCR/Parsing works against ground truth

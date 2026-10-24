@@ -12,14 +12,12 @@ ENV MAX_WORKERS=1
 ENV WEB_CONCURRENCY=1
 ENV OMP_NUM_THREADS=1
 
-# Install system dependencies required for PyMuPDF, Tesseract OCR, PostgreSQL, MIME sniffing, and networking
+# Install system dependencies (Removed Tesseract & libmagic1 to prevent OOM)
 RUN apt-get update && apt-get install -y \
     build-essential \
-    tesseract-ocr \
     curl \
     libpq-dev \
     gcc \
-    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -34,13 +32,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire backend directory into the container
 COPY . .
 
-# Ensure logging directory exists (No more /app/data local persistence needed)
+# Ensure logging directory exists
 RUN mkdir -p /app/logs && chmod -R 777 /app/logs
 
 # Expose the API port
 EXPOSE 10000
 
-# Health check (Using -I to perform a HEAD request natively)
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f -I http://localhost:10000/health || exit 1
 

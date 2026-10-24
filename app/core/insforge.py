@@ -3,7 +3,7 @@ import logging
 import psycopg2
 from psycopg2.extras import DictCursor
 import boto3
-from botocore.exceptions import ClientError
+from botocore.config import Config
 from app.core.config import settings
 
 logger = logging.getLogger("AMALDA_API")
@@ -49,14 +49,21 @@ class InsForgeClient:
 
     def _init_s3(self):
         try:
+            # Locked to the exact region discovered by the brute-forcer
+            region = "us-east-2"
+            
             self.s3_client = boto3.client(
                 's3',
                 endpoint_url=settings.INSFORGE_S3_ENDPOINT,
                 aws_access_key_id=settings.INSFORGE_S3_ACCESS_KEY,
                 aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
-                region_name="us-east-1"
+                region_name=region,
+                config=Config(
+                    signature_version='s3v4',
+                    s3={'addressing_style': 'path'}
+                )
             )
-            logger.info(f"🟢 Initialized InsForge S3 Storage for bucket: {settings.INSFORGE_S3_BUCKET}")
+            logger.info(f"🟢 Initialized InsForge S3 Storage for bucket: {settings.INSFORGE_S3_BUCKET} in region {region}")
         except Exception as e:
             logger.error(f"InsForge S3 Init Failed: {e}")
             raise
@@ -69,7 +76,8 @@ class InsForgeClient:
         self.s3_client.put_object(
             Bucket=settings.INSFORGE_S3_BUCKET,
             Key=filename,
-            Body=file_bytes
+            Body=file_bytes,
+            ContentType="application/pdf"
         )
         return f"s3://{settings.INSFORGE_S3_BUCKET}/{filename}"
 
@@ -89,12 +97,15 @@ class InsForgeClient:
             logger.error(f"Failed to delete {filename} from S3: {e}")
 
     def generate_presigned_url(self, filename: str, expires_in=3600) -> str:
-        """Generates a secure temporary URL for the frontend UI to render PDFs without stressing our server."""
-        return self.s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': settings.INSFORGE_S3_BUCKET, 'Key': filename},
-            ExpiresIn=expires_in
-        )
+        """
+        InsForge explicitly does not support S3 presigned URLs.
+        Instead, we construct the native InsForge REST public URL for the frontend.
+        """
+        # Extract base project URL (e.g., https://se72376v.ap-southeast.insforge.app)
+        base_url = settings.INSFORGE_S3_ENDPOINT.split("/storage/")[0]
+        
+        # Construct the native REST URL
+        return f"{base_url}/storage/v1/object/public/{settings.INSFORGE_S3_BUCKET}/{filename}"
 
     def update_job_status(self, filename: str, processed_pages: int, total_pages: int, status: str):
         query = """

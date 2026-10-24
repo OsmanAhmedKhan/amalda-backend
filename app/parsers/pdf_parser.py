@@ -1,10 +1,9 @@
 import os
 import uuid
 import logging
-import pytesseract
-import fitz  # PyMuPDF
-from PIL import Image
+import gc
 import io
+import pymupdf  # 🔥 No more 'as fitz' alias
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import HTTPException
@@ -12,10 +11,6 @@ from fastapi import HTTPException
 from app.core.insforge import insforge
 
 logger = logging.getLogger("AMALDA_API")
-# NOTE: Ensure Tesseract is installed in your local environment or Docker container.
-# If running on Linux (Docker), remove the Windows path below.
-if os.name == 'nt':
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 class BoundingBox(BaseModel):
     page_number: int
@@ -39,18 +34,9 @@ class LegalDocumentParser:
         pass
 
     def _perform_ocr_on_page(self, pdf_bytes: bytes, page_index: int) -> str:
-        """Performs OCR directly from a memory stream."""
-        try:
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            page = doc.load_page(page_index)
-            pix = page.get_pixmap(dpi=300)
-            img = Image.open(io.BytesIO(pix.tobytes()))
-            ocr_text = pytesseract.image_to_string(img)
-            doc.close()
-            return ocr_text
-        except Exception as e:
-            logger.error(f"OCR failed on page {page_index+1}. Error: {e}")
-            return "[OCR FAILED OR UNAVAILABLE]"
+        """🔥 MEMORY OPTIMIZATION: Disabled local OCR for 512MB Free Tier."""
+        logger.warning(f"Skipping OCR on page {page_index+1}. Local OCR disabled to prevent OOM on Render.")
+        return ""
 
     def _semantic_chunking(self, pages_data: List[dict], filename: str) -> List[ParsedNode]:
         """Creates ~1000 character chunks with a 3-line overlap."""
@@ -105,17 +91,18 @@ class LegalDocumentParser:
             )
         )
 
-    def parse_pdf_incrementally(self, file_bytes: bytes, filename: str, vector_db, batch_size=50):
+    def parse_pdf_incrementally(self, file_bytes: bytes, filename: str, vector_db, batch_size=10):
         """
         🟢 STATELESS: Processes PDFs safely from memory bytes.
-        Uses InsForge to track progress so it can resume if the server crashes.
+        🔥 MEMORY OPTIMIZATION: Reduced batch_size to 10 and added explicit Garbage Collection.
         """
         job_status = insforge.get_job_status(filename)
         start_page = job_status["processed_pages"] if job_status else 0
         
         logger.info(f"Starting resumable ingestion for {filename} at page {start_page}...")
 
-        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+        # 🔥 Uses pymupdf directly instead of fitz
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             total_pages = len(pdf)
             
             if not job_status:
@@ -145,6 +132,8 @@ class LegalDocumentParser:
                         "width": rect.width if rect else 500,
                         "height": rect.height if rect else 800
                     })
+                    
+                    page = None  # Free page object immediately
 
                 if not batch_has_text:
                     logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {filename}.")
@@ -163,6 +152,12 @@ class LegalDocumentParser:
 
                 insforge.update_job_status(filename, end_page, total_pages, 'PROCESSING')
                 logger.info(f"✅ Checkpoint Saved: Processed pages {i} to {end_page} of {total_pages}")
+                
+                # 🔥 MEMORY OPTIMIZATION: Force clear variables and run GC to keep RAM < 512MB
+                del pages_data
+                del nodes
+                del tmp
+                gc.collect()
 
         insforge.update_job_status(filename, total_pages, total_pages, 'COMPLETED')
         logger.info(f"✅ Fully completed processing {filename}.")
@@ -173,7 +168,8 @@ class LegalDocumentParser:
         pages_data = []
         document_has_text = False
         
-        with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
+        # 🔥 Uses pymupdf directly instead of fitz
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             for i in range(len(pdf)):
                 page = pdf.load_page(i)
                 text = page.get_text("text")
@@ -192,6 +188,8 @@ class LegalDocumentParser:
                     "width": rect.width if rect else 500,
                     "height": rect.height if rect else 800
                 })
+                
+                page = None # Free page object
 
         if not document_has_text:
             logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {filename}.")
@@ -202,4 +200,9 @@ class LegalDocumentParser:
 
         nodes = self._semantic_chunking(pages_data, filename)
         logger.info(f"Generated {len(nodes)} dense legal nodes.")
+        
+        # Cleanup
+        del pages_data
+        gc.collect()
+        
         return ParsedDocument(filename=filename, nodes=nodes)

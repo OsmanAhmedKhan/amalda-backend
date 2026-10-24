@@ -1,12 +1,16 @@
 import hashlib
 import logging
-import magic
 import zipfile
 import io
+import os
+import time
+import boto3
+import mimetypes
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 
 from app.core.config import settings
@@ -31,9 +35,18 @@ ALLOWED_MIME_TYPES = [
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ]
 
-def secure_mime_sniff_bytes(file_bytes: bytes) -> str:
-    """Safely determines MIME type directly from a memory buffer."""
-    mime = magic.from_buffer(file_bytes[:2048], mime=True)
+# 🔥 DEPENDENCY OPTIMIZATION: Use built-in Python mimetypes and zipfile scanning instead of python-magic
+def secure_mime_sniff_bytes(file_bytes: bytes, filename: str, fallback_mime: str) -> str:
+    """Safely determines MIME type using built-in libraries without C-bindings."""
+    mime = fallback_mime
+    
+    # Use python's built-in mimetype guesser if the frontend didn't supply one
+    if not mime or mime == "application/octet-stream":
+        guessed_type, _ = mimetypes.guess_type(filename)
+        if guessed_type:
+            mime = guessed_type
+
+    # Deep inspect zip archives for modern Office formats
     if mime in ['application/zip', 'application/octet-stream', 'application/x-zip-compressed']:
         try:
             with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as zf:
@@ -46,7 +59,8 @@ def secure_mime_sniff_bytes(file_bytes: bytes) -> str:
                     return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
         except zipfile.BadZipFile:
             pass
-    return mime
+            
+    return mime or "application/octet-stream"
 
 @router.get("/")
 async def list_documents(
@@ -56,24 +70,51 @@ async def list_documents(
     db: Session = Depends(get_db)
 ):
     try:
+        # 1. Fetch records from local SQL DB
         query = db.query(DocumentRecord).filter(DocumentRecord.deleted_at == None)
         if status_filter:
             query = query.filter(DocumentRecord.status == status_filter)
-        total = query.count()
-        records = query.offset(skip).limit(limit).all()
+        db_records = query.offset(skip).limit(limit).all()
+
+        # 2. Cross-reference with Supabase S3 bucket
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=settings.INSFORGE_S3_ENDPOINT,
+            aws_access_key_id=settings.INSFORGE_S3_ACCESS_KEY,
+            aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
+            region_name=os.getenv("S3_REGION", "ap-southeast-1")
+        )
+        
+        actual_files_in_bucket = set()
+        try:
+            response = s3_client.list_objects_v2(Bucket=settings.INSFORGE_S3_BUCKET)
+            if 'Contents' in response:
+                actual_files_in_bucket = {obj['Key'] for obj in response['Contents']}
+        except Exception as e:
+            logger.error(f"Failed to list objects in S3 for validation: {e}")
+            pass
+
+        # 3. Filter the DB records against actual S3 contents (SILENTLY)
+        validated_documents = []
+        for r in db_records:
+            if actual_files_in_bucket and r.filename not in actual_files_in_bucket:
+                # Silently skip the ghost file to keep the terminal clean
+                continue
+                
+            validated_documents.append({
+                "filename": r.filename, 
+                "status": r.status.value if r.status else None, 
+                "created_at": r.created_at,
+                "error": r.error_message
+            })
+
         return {
-            "total_records": total,
+            "total_records": len(validated_documents),
             "skip": skip,
             "limit": limit,
-            "documents": [
-                {
-                    "filename": r.filename, 
-                    "status": r.status.value if r.status else None, 
-                    "created_at": r.created_at,
-                    "error": r.error_message
-                } for r in records
-            ]
+            "documents": validated_documents
         }
+
     except Exception as e:
         logger.error(f"Failed to list documents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -127,10 +168,9 @@ async def delete_document(filename: str, request: Request, db: Session = Depends
         vector_db = request.app.state.db
         purged_count = vector_db.delete_document_embeddings(safe_name)
         
-        # Remove from S3
         insforge.delete_file(safe_name)
         
-        logger.info(f"🗑️ Successfully soft-deleted document '{safe_name}'.")
+        logger.info(f"Successfully soft-deleted document '{safe_name}'.")
         return {"status": "success", "filename": safe_name, "embeddings_purged": purged_count, "message": f"Document '{safe_name}' deleted."}
     except Exception as e:
         db.rollback()
@@ -138,16 +178,30 @@ async def delete_document(filename: str, request: Request, db: Session = Depends
 
 @router.get("/{filename}/download")
 async def download_document(filename: str, api_key: str = Depends(verify_api_key)):
-    """
-    Securely redirects to a temporary S3 presigned URL.
-    Offloads massive PDF streaming bandwidth from FastAPI to S3.
-    """
     safe_name = secure_filename(filename)
     try:
-        presigned_url = insforge.generate_presigned_url(safe_name, expires_in=3600)
-        return RedirectResponse(url=presigned_url)
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=settings.INSFORGE_S3_ENDPOINT,
+            aws_access_key_id=settings.INSFORGE_S3_ACCESS_KEY,
+            aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
+            region_name=os.getenv("S3_REGION", "ap-southeast-1")
+        )
+        
+        response = s3_client.get_object(Bucket=settings.INSFORGE_S3_BUCKET, Key=safe_name)
+        file_bytes = response['Body'].read()
+        
+        return StreamingResponse(
+            io.BytesIO(file_bytes), 
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{safe_name}"',
+                "Cache-Control": "no-store"
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Failed to generate download link: {str(e)}")
+        logger.error(f"Failed to stream document {safe_name}: {e}")
+        raise HTTPException(status_code=404, detail=f"File not found in S3: {str(e)}")
 
 @router.post("/upload", response_model=UploadResponse)
 @limiter.limit("10/minute")
@@ -155,40 +209,46 @@ async def upload_document(request: Request, file: UploadFile = File(...), db: Se
     safe_filename = secure_filename(file.filename)
     
     try:
-        # Load file safely into memory
         file_bytes = await file.read()
         if len(file_bytes) > MAX_FILE_SIZE_BYTES:
             raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
         
-        # Sniff MIME directly from memory bytes
-        mime_type = secure_mime_sniff_bytes(file_bytes)
+        # Use FastAPI's content_type as the primary identifier, fallback to python's built-in mimetypes
+        mime_type = secure_mime_sniff_bytes(file_bytes, safe_filename, file.content_type)
         is_text = mime_type.startswith("text/") or mime_type in ["inode/x-empty", "application/csv"]
         
         if mime_type not in ALLOWED_MIME_TYPES and not is_text:
             raise HTTPException(status_code=415, detail=f"Unsupported or unsafe file format: {mime_type}")
         
-        # Stream bytes straight to InsForge S3
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        raw_hash = hashlib.sha256(file_bytes).hexdigest()
+        unique_file_hash = f"{raw_hash}_{int(time.time())}"
+        
         insforge.save_file_bytes(safe_filename, file_bytes)
         
-        existing_doc = db.query(DocumentRecord).filter((DocumentRecord.file_hash == file_hash) | (DocumentRecord.filename == safe_filename)).first()
+        existing_doc = db.query(DocumentRecord).filter(DocumentRecord.filename == safe_filename).first()
         
         if existing_doc:
-            if existing_doc.deleted_at is None:
+            if existing_doc.deleted_at is None and existing_doc.status in [DocStatus.COMPLETED, DocStatus.PROCESSING, DocStatus.PENDING]:
                 return UploadResponse(filename=safe_filename, message=f"Document already exists (Status: {existing_doc.status.value if existing_doc.status else 'UNKNOWN'}).")
             else:
                 existing_doc.deleted_at = None
                 existing_doc.status = DocStatus.PENDING
-                existing_doc.file_hash = file_hash
+                existing_doc.file_hash = unique_file_hash
+                existing_doc.error_message = None
                 db.commit()
         else:
-            new_doc = DocumentRecord(filename=safe_filename, file_hash=file_hash, status=DocStatus.PENDING)
+            new_doc = DocumentRecord(filename=safe_filename, file_hash=unique_file_hash, status=DocStatus.PENDING)
             db.add(new_doc)
             db.commit()
             
-        return UploadResponse(filename=safe_filename, message="Upload complete! Poll the /status endpoint until is_ready=true.")
+        return UploadResponse(filename=safe_filename, message="Upload complete! Document is now processing.")
+    except IntegrityError as e:
+        db.rollback()
+        logger.error(f"Database Integrity Error during upload: {e}")
+        raise HTTPException(status_code=500, detail="Database constraint violation. Please try renaming the file.")
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Upload Crash: {e}")
         raise HTTPException(status_code=500, detail=str(e))
