@@ -11,6 +11,7 @@ python-multipart==0.0.32
 # 2. Database & Storage (InsForge S3 & Postgres)
 SQLAlchemy==2.0.54
 psycopg[binary]==3.2.3
+psycopg2-binary==2.9.9
 boto3
 
 # 3. PDF Parsing (No OCR overhead)
