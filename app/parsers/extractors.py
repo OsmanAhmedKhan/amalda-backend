@@ -1,7 +1,6 @@
 import os
 import io
 import pymupdf
-import pytesseract
 import docx
 import openpyxl
 import pptx
@@ -11,11 +10,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.parsers.registry import BaseExtractor, ExtractedDocument, ExtractedNode, registry
 # Import our robust PDF Parser to serve as the main engine for PDFs
 from app.parsers.pdf_parser import LegalDocumentParser
-
-# Adjust tesseract path if running locally on a Windows PC
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-if os.path.exists(TESSERACT_PATH):
-    pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 class TextExtractor(BaseExtractor):
     def __init__(self):
@@ -41,11 +35,9 @@ class ImageExtractor(BaseExtractor):
 
     def extract(self, file_bytes: bytes, filename: str) -> ExtractedDocument:
         Image.MAX_IMAGE_PIXELS = 100000000
-        # Load Image from Memory
-        img = Image.open(io.BytesIO(file_bytes))
-        text = pytesseract.image_to_string(img)
-        if not text.strip():
-            text = "[No readable text found in image]"
+        # 🔥 MEMORY OPTIMIZATION: Disabled local OCR for 512MB Free Tier. 
+        # Cannot run pytesseract on images in this environment.
+        text = "[Local OCR disabled on Render free tier. Cannot extract text from image.]"
         chunks = self.splitter.split_text(text)
         nodes = [ExtractedNode(text=chunk, metadata={"page_number": 1, "page_label": "Image", "source": filename, "format": "image"}) for chunk in chunks]
         return ExtractedDocument(filename=filename, nodes=nodes)
@@ -90,7 +82,7 @@ class SpreadsheetExtractor(BaseExtractor):
                 text = "\n".join(sheet_text)
                 chunks = self.splitter.split_text(text)
                 for chunk in chunks:
-                    nodes. filter(ExtractedNode(text=chunk, metadata={"page_number": i+1, "page_label": f"Sheet: {sheet_name}", "source": filename, "format": "xlsx"}))
+                    nodes.append(ExtractedNode(text=chunk, metadata={"page_number": i+1, "page_label": f"Sheet: {sheet_name}", "source": filename, "format": "xlsx"}))
         return ExtractedDocument(filename=filename, nodes=nodes)
 
 class PptxExtractor(BaseExtractor):
