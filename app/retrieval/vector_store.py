@@ -1,4 +1,5 @@
 import os
+import logging
 import chromadb
 import numpy as np
 import httpx
@@ -6,7 +7,9 @@ from chromadb import Documents, EmbeddingFunction, Embeddings
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
 
-# 🔥 DEPENDENCY OPTIMIZATION: Custom HTTP wrapper to bypass Google's broken SDKs
+logger = logging.getLogger("AMALDA_API")
+
+# 🔥 RENDER FREE TIER: Custom HTTP embedding function (remote Gemini API - zero local model RAM)
 class GeminiHTTPEmbeddingFunction(EmbeddingFunction):
     def __init__(self, api_key: str):
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={api_key}"
@@ -28,15 +31,15 @@ class GeminiHTTPEmbeddingFunction(EmbeddingFunction):
 
 class VectorDatabase:
     def __init__(self):
-        # Use PersistentClient to write vector database to a local folder
-        db_path = os.path.join(os.getcwd(), "chroma_storage")
-        self.client = chromadb.PersistentClient(path=db_path)
+        # 🔥 RENDER FREE TIER: Ephemeral in-memory client - NO local disk persistence.
+        # Data is lost on restart/spin-down (acceptable for free tier).
+        # Documents remain in InsForge S3 and can be re-indexed on re-upload.
+        self.client = chromadb.EphemeralClient()
         
         gemini_key = os.getenv("GEMINI_API_KEY")
         if not gemini_key:
-            raise ValueError("GEMINI_API_KEY is required for remote embeddings to save RAM.")
+            raise ValueError("GEMINI_API_KEY is required for remote embeddings.")
             
-        # Use our lightweight custom HTTP embedding function
         self.embedding_fn = GeminiHTTPEmbeddingFunction(api_key=gemini_key)
         
         self.collection = self.client.get_or_create_collection(
@@ -44,6 +47,7 @@ class VectorDatabase:
             embedding_function=self.embedding_fn,
             metadata={"hnsw:space": "cosine"}
         )
+        logger.info("🟢 In-memory ChromaDB collection ready (no disk persistence).")
 
     def index_document(self, parsed_doc) -> None:
         ids = []

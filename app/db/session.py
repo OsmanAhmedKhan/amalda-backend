@@ -14,14 +14,15 @@ if not INSFORGE_URL:
 
 if INSFORGE_URL.startswith("postgresql://"):
     INSFORGE_URL = INSFORGE_URL.replace("postgresql://", "postgresql+psycopg://")
-    
+
+# 🔥 RENDER FREE TIER: Small connection pool to fit 512MB RAM
 engine = create_engine(
     INSFORGE_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=60,         # Recycle connections every 60 seconds
-    pool_timeout=30,
-    pool_pre_ping=True,      # Verify connection before routing query
+    pool_size=3,
+    max_overflow=5,
+    pool_recycle=60,
+    pool_timeout=15,
+    pool_pre_ping=True,
     connect_args={
         "sslmode": "require",
         "keepalives": 1,
@@ -43,11 +44,10 @@ def get_db():
         try:
             db.rollback()
         except Exception:
-            pass # Swallow rollback errors if connection is already dead
+            pass
         raise
     finally:
         try:
             db.close()
         except Exception as e:
-            # Prevent dead sockets from crashing the ASGI server on cleanup
-            logger.warning(f"Ignored DB close error (Connection likely dropped by Supabase): {e}")
+            logger.warning(f"Ignored DB close error: {e}")

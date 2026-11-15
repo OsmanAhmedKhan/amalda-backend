@@ -2,21 +2,17 @@ services:
   - type: web
     name: amalda-backend
     env: docker
-    plan: starter # Required: Free tier does not support persistent disks
+    plan: starter
     region: ohio
     healthCheckPath: /health
-    disk:
-      name: amalda-persistent-storage
-      mountPath: /app/data
-      sizeGB: 1
+    # No persistent disk on Render free tier - filesystem is ephemeral.
+    # Files go to InsForge S3; vectors are in-memory (lost on restart, re-indexed on re-upload).
     envVars:
       - key: PORT
-        value: 10000
-      - key: UPLOAD_DIR
-        value: /app/data/uploads
-      - key: CHROMA_PERSIST_DIR
-        value: /app/data/chroma_db
-      - key: LOCAL_DB_PATH
-        value: /app/data/amalda.db
+        value: 8000
       - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: OMP_NUM_THREADS
         value: "1"

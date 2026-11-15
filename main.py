@@ -1,4 +1,5 @@
 import os
+import sys
 import uuid
 import logging
 import asyncio
@@ -13,9 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# --- 1. LOGGING & DB SETUP ---
-os.makedirs("./logs", exist_ok=True)
-
+# --- 1. LOGGING SETUP (stdout only - Render free tier has no persistent disk) ---
 request_id_context_var = contextvars.ContextVar("request_id", default="SYSTEM")
 
 class RequestIDFilter(logging.Filter):
@@ -26,10 +25,7 @@ class RequestIDFilter(logging.Filter):
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] - [ReqID: %(request_id)s] - %(message)s",
-    handlers=[
-        logging.FileHandler("./logs/amalda_backend.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 for handler in logging.root.handlers:
@@ -37,10 +33,19 @@ for handler in logging.root.handlers:
 
 logger = logging.getLogger("AMALDA_API")
 
+# --- 2. IMPORTS ---
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.db.session import engine, Base, get_db
 from app.api.v1.api_router import api_router
+
+# Auto-create all SQLAlchemy tables on startup (Render free tier: fresh DB each deploy)
+def _ensure_tables():
+    try:
+        Base.metadata.create_all(engine)
+        logger.info("🟢 SQLAlchemy tables ensured.")
+    except Exception as e:
+        logger.warning(f"Table creation skipped (DB may already have them): {e}")
 
 from app.retrieval.vector_store import VectorDatabase
 from app.parsers.pdf_parser import LegalDocumentParser
@@ -61,11 +66,19 @@ async def resilient_worker_launcher(app_state):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🟢 STARTUP: Initializing engines securely...")
+    
+    # Ensure SQLAlchemy tables exist (fresh InsForge DB on each Render deploy)
+    _ensure_tables()
+    
+    # Initialize InsForge-backed storage (cloud, not local disk)
     app.state.db = VectorDatabase()
     app.state.parser = LegalDocumentParser()
     app.state.agent_graph = build_agent_graph()
     
+    # Recover any orphaned processing jobs
     sweep_orphaned_tasks()
+    
+    # Start background worker loop
     worker_task = asyncio.create_task(resilient_worker_launcher(app.state))
     logger.info("🟢 STARTUP: All systems operational.")
     
@@ -104,11 +117,15 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestIDMiddleware)
 
-allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")]
+# CORS: allow localhost dev + Render frontend URLs (comma-separated env)
+allowed_origins = [origin.strip() for origin in os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,https://amalda-legal.vercel.app,https://amalda-legal.pages.dev"
+).split(",")]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins, 
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
@@ -119,7 +136,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1")
 
-# --- 6. DEEP HEALTH CHECK (EXCLUDED HEAD FROM OPENAPI SCHEMA TO AVOID DUPLICATE IDS) ---
+# --- 6. DEEP HEALTH CHECK ---
 @app.get("/", include_in_schema=False)
 @app.head("/", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
@@ -158,5 +175,7 @@ async def health_check(db: Session = Depends(get_db)):
     return health_status
 
 if __name__ == "__main__":
-    logger.info(f"🚀 Starting {settings.PROJECT_NAME} API on port {settings.PORT}...")
-    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT)
+    # Render free tier: bind to 0.0.0.0, use $PORT env var
+    port = int(os.getenv("PORT", settings.PORT))
+    logger.info(f"🚀 Starting {settings.PROJECT_NAME} API on 0.0.0.0:{port}...")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
