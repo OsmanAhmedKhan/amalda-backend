@@ -105,7 +105,7 @@ async def list_documents(
             endpoint_url=settings.INSFORGE_S3_ENDPOINT,
             aws_access_key_id=settings.INSFORGE_S3_ACCESS_KEY,
             aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
-            region_name=os.getenv("S3_REGION", "ap-southeast-1")
+            region_name=os.getenv("S3_REGION", "us-east-2")
         )
         
         actual_files_in_bucket = set()
@@ -208,7 +208,7 @@ async def download_document(filename: str, api_key: str = Depends(verify_api_key
             endpoint_url=settings.INSFORGE_S3_ENDPOINT,
             aws_access_key_id=settings.INSFORGE_S3_ACCESS_KEY,
             aws_secret_access_key=settings.INSFORGE_S3_SECRET_KEY,
-            region_name=os.getenv("S3_REGION", "ap-southeast-1")
+            region_name=os.getenv("S3_REGION", "us-east-2")
         )
         
         response = s3_client.get_object(Bucket=settings.INSFORGE_S3_BUCKET, Key=safe_name)
