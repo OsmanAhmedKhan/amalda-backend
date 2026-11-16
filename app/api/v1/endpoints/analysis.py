@@ -5,6 +5,7 @@ import logging
 from typing import AsyncGenerator, Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.schemas.api_models import AnalysisResponse
 from app.core.rate_limit import limiter
