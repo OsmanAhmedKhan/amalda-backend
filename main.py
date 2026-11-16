@@ -136,6 +136,22 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1")
 
+# 🔥 API v1 root — professional response instead of 404
+@app.get("/api/v1", include_in_schema=False)
+@app.head("/api/v1", include_in_schema=False)
+async def api_v1_root():
+    return {
+        "system": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "status": "healthy",
+        "api_version": "v1",
+        "endpoints": {
+            "documents": "/api/v1/documents/",
+            "analyze": "/api/v1/analyze",
+            "health": "/health"
+        }
+    }
+
 # --- 6. DEEP HEALTH CHECK ---
 @app.get("/", include_in_schema=False)
 @app.head("/", include_in_schema=False)

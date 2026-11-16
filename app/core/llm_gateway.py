@@ -14,8 +14,12 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.core.config import settings
 
-warnings.filterwarnings("ignore", message=".*automatic function calling.*")
-warnings.filterwarnings("ignore", category=UserWarning, module="google.genai")
+# 🔥 SAAS GRADE: Suppress all third-party warnings — zero noise in production logs
+warnings.filterwarnings("ignore")
+logging.getLogger("langchain_google_genai").setLevel(logging.ERROR)
+logging.getLogger("langchain").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("httpcore").setLevel(logging.ERROR)
 
 logger = logging.getLogger("AMALDA_API")
 
@@ -120,34 +124,6 @@ class OpenRouterEngine(ExecutionEngine):
         return llm.with_structured_output(schema, method="json_mode", include_raw=False) if schema else llm
 
 
-class CloudflareEngine(ExecutionEngine):
-    def discover_and_verify(self):
-        self.account_id = getattr(settings, "CF_ACCOUNT_ID", None)
-        if not self.api_key or not self.account_id:
-            self.status = "SKIPPED"
-            return
-        self.model = "@cf/meta/llama-3.2-3b-instruct"
-        self.status = "VERIFIED"
-        logger.info(f"[Registry] {self.engine_id} registered. Model: {self.model} -> {self.status}")
-
-    def get_langchain_client(self, schema=None):
-        base_url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/ai/v1"
-        llm = ChatOpenAI(
-            base_url=base_url,
-            model=self.model,
-            api_key=self.api_key,
-            temperature=0.0,
-            max_retries=0,
-            default_headers={"Authorization": f"Bearer {self.api_key}"},
-            http_client=GLOBAL_HTTPX_CLIENT
-        )
-        if schema:
-            from langchain_core.output_parsers import PydanticOutputParser
-            parser = PydanticOutputParser(pydantic_object=schema)
-            return llm | parser
-        return llm
-
-
 class EnterpriseLLMGateway:
     def __init__(self):
         self.engines: List[ExecutionEngine] = []
@@ -164,8 +140,6 @@ class EnterpriseLLMGateway:
             self.engines.append(GeminiEngine("Gemini", "Gemini-Main", settings.GEMINI_API_KEY))
         if getattr(settings, "OPENROUTER_API_KEY", None):
             self.engines.append(OpenRouterEngine("OpenRouter", "OpenRouter-Main", settings.OPENROUTER_API_KEY))
-        if getattr(settings, "CLOUDFLARE_API_KEY", None):
-            self.engines.append(CloudflareEngine("Cloudflare", "Cloudflare-Main", settings.CLOUDFLARE_API_KEY))
 
         for e in self.engines:
             e.discover_and_verify()
@@ -292,10 +266,10 @@ class EnterpriseLLMGateway:
                     elif status_code == 400:
                         schema_failures_this_run += 1
                         if schema_failures_this_run > 3:
-                            logger.error(f"[Gateway Escalation] Schema validation failed {schema_failures_this_run} times. Escalating.")
-                            raise e 
+                            logger.debug(f"[Gateway] Schema validation exceeded retries, trying next engine.")
+                            continue
                         engine.cooldown_until = time.time() + 2.0
-                        logger.error(f"[Engine Schema Error] {engine.engine_id} failed JSON validation. Attempt {schema_failures_this_run}/3")
+                        logger.debug(f"[Engine] {engine.engine_id} schema retry {schema_failures_this_run}/3, failing over.")
                     
                     else:
                         engine.cooldown_until = time.time() + min(30, (2 ** min(engine.total_errors, 5)))
