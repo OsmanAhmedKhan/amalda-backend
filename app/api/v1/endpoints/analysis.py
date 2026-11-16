@@ -10,6 +10,7 @@ from app.schemas.api_models import AnalysisResponse
 from app.core.rate_limit import limiter
 from app.db.session import SessionLocal
 from app.db.models import ConversationThread, ChatMessage, QueryAudit
+from app.services.memory_service import memory_service, ShortTermMemory
 
 logger = logging.getLogger("AMALDA_API")
 router = APIRouter()
@@ -17,31 +18,34 @@ router = APIRouter()
 def _extract_text(value: Any) -> str:
     if value is None: return ""
     if isinstance(value, str): return value
-    if isinstance(value, list): return "\n".join([str(item.get("text", item)) if isinstance(item, dict) else str(item) for item in value])
+    if isinstance(value, list):
+        return "\n".join([str(item.get("text", item)) if isinstance(item, dict) else str(item) for item in value])
     if hasattr(value, "content"): return _extract_text(value.content)
     return str(value)
 
-def _retrieve_context_and_history(query: str, thread_id: str | None, document_ids: list | None, vector_db):
-    db = SessionLocal()
-    conversation_history = []
-    try:
-        if thread_id:
-            thread = db.query(ConversationThread).filter(ConversationThread.id == thread_id).first()
-            if not thread:
-                thread = ConversationThread(id=thread_id, title=query[:80])
-                db.add(thread)
-                db.commit()
-        else:
-            thread_id = str(uuid.uuid4())
-            thread = ConversationThread(id=thread_id, title=query[:80])
-            db.add(thread)
-            db.commit()
+def _retrieve_context_and_history(query: str, thread_id: str | None, document_ids: list | None,
+                                  vector_db, db: Session):
+    """
+    Retrieve RAG evidence + short-term conversation history + long-term memory context.
+    Everything is backed by InsForge PostgreSQL so memory survives Render restarts.
+    """
+    # --- Long-term memory: get or create conversation thread ---
+    thread = memory_service.get_or_create_thread(db, thread_id)
+    thread_id = thread.id
 
-        history_records = db.query(ChatMessage).filter(ChatMessage.thread_id == thread_id).order_by(ChatMessage.created_at.asc()).limit(6).all()
-        conversation_history = [{"role": m.role, "content": _extract_text(m.content)} for m in history_records]
-    finally:
-        db.close()
+    # --- Short-term memory: recent messages from this thread ---
+    recent = memory_service.get_recent_messages(db, thread_id, limit=6)
+    conversation_history = [
+        {"role": m.role, "content": _extract_text(m.content)}
+        for m in reversed(recent)
+    ]
 
+    # --- Long-term memory: relevant past conversations from OTHER threads ---
+    past_context = memory_service.get_relevant_past_context(
+        db, thread_id, query, limit=3
+    )
+
+    # --- RAG vector search ---
     evidence_chunks = []
     sources_payload = []
     target_docs = [d for d in (document_ids or []) if d and str(d).strip()]
@@ -72,6 +76,11 @@ def _retrieve_context_and_history(query: str, thread_id: str | None, document_id
         sources_payload.append({"document_id": doc_label, "page_number": 1, "snippet": fallback_chunk[:150], "confidence_score": 0.88})
 
     evidence_text = "\n\n".join(evidence_chunks)
+
+    # Prepend long-term memory context if available
+    if past_context:
+        evidence_text = past_context + "\n\n" + evidence_text
+
     return thread_id, evidence_text, conversation_history, sources_payload
 
 def _record_audit_and_messages(thread_id: str, query: str, final_state: dict, duration_ms: int):
@@ -110,12 +119,16 @@ async def analyze_query(request: Request):
     start_time = time.perf_counter()
     request_data = await request.json()
     query_str = request_data.get('query', '')
-    
+
     try:
         vector_db = request.app.state.db
-        thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-            query_str, request_data.get('thread_id'), request_data.get('document_ids'), vector_db
-        )
+        db = SessionLocal()
+        try:
+            thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
+                query_str, request_data.get('thread_id'), request_data.get('document_ids'), vector_db, db
+            )
+        finally:
+            db.close()
 
         agent_inputs = {
             "query": query_str,
@@ -147,7 +160,7 @@ async def analyze_query(request: Request):
             "sources": sources
         }
         return AnalysisResponse(**response_data)
-        
+
     except HTTPException: raise
     except Exception as e:
         logger.error(f"Error during analysis query: {str(e)}", exc_info=True)
@@ -159,19 +172,23 @@ async def analyze_query_stream(request: Request):
     request_data = await request.json()
     query_str = request_data.get('query', '')
     is_deep_dive = request_data.get('is_deep_dive', True)
-    
+
     logger.info(f"Starting SSE stream analysis for query: '{query_str}' (Deep Dive: {is_deep_dive})")
-    
+
     async def event_generator() -> AsyncGenerator[str, None]:
         start_time = time.perf_counter()
         try:
             vector_db = request.app.state.db
-            
+
             yield f"event: status\ndata: {json.dumps({'stage': 'retrieval', 'message': 'Searching document vector index...'})}\n\n"
-            
-            thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
-                query_str, request_data.get('thread_id'), request_data.get('document_ids'), vector_db
-            )
+
+            db = SessionLocal()
+            try:
+                thread_id, evidence_text, conversation_history, sources = _retrieve_context_and_history(
+                    query_str, request_data.get('thread_id'), request_data.get('document_ids'), vector_db, db
+                )
+            finally:
+                db.close()
 
             agent_inputs = {
                 "query": query_str,
@@ -186,32 +203,31 @@ async def analyze_query_stream(request: Request):
             agent_graph = request.app.state.agent_graph
 
             yield f"event: status\ndata: {json.dumps({'stage': 'clause_agent', 'message': 'Analyzing relevant contractual clauses...'})}\n\n"
-            
+
             final_state = {}
             for output in agent_graph.stream(agent_inputs, {"recursion_limit": 12}):
                 if not output or not isinstance(output, dict): continue
                 for node_name, node_output in output.items():
                     if not node_output or not isinstance(node_output, dict): continue
-                    
-                    if node_name == "clause_agent": 
+
+                    if node_name == "clause_agent":
                         yield f"event: status\ndata: {json.dumps({'stage': 'risk_agent', 'message': 'Evaluating liabilities and risks...'})}\n\n"
-                    elif node_name == "risk_agent": 
+                    elif node_name == "risk_agent":
                         yield f"event: status\ndata: {json.dumps({'stage': 'judge_agent', 'message': 'Synthesizing judicial verdict and citations...'})}\n\n"
-                    elif node_name == "judge_agent": 
+                    elif node_name == "judge_agent":
                         yield f"event: status\ndata: {json.dumps({'stage': 'verifier_agent', 'message': 'Auditing claims against source documents...'})}\n\n"
                     elif node_name == "verifier_agent":
                         critique = node_output.get("verification_critique")
-                        if critique: 
+                        if critique:
                             yield f"event: status\ndata: {json.dumps({'stage': 'judge_agent', 'message': 'Self-correction loop triggered...'})}\n\n"
-                        else: 
+                        else:
                             yield f"event: status\ndata: {json.dumps({'stage': 'finalizing', 'message': 'Verification passed. Finalizing payload...'})}\n\n"
-                    
+
                     final_state.update(node_output)
 
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             _record_audit_and_messages(thread_id, query_str, final_state, duration_ms)
 
-            # FLAT JSON DELIVERY: Matches the robust schema
             complete_payload = {
                 "thread_id": thread_id,
                 "query": query_str,
@@ -231,7 +247,7 @@ async def analyze_query_stream(request: Request):
                 "safe_alternative": str(final_state.get("safe_alternative", "")),
                 "strategic_action_plan": str(final_state.get("strategic_action_plan", "")),
                 "sources": sources,
-                "isRiskReport": not is_deep_dive 
+                "isRiskReport": not is_deep_dive
             }
             yield f"event: complete\ndata: {json.dumps(complete_payload)}\n\n"
 
