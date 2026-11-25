@@ -3,28 +3,20 @@ import uuid
 import logging
 import gc
 import io
+import pytesseract
+from PIL import Image
+import pymupdf
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import HTTPException
 
-try:
-    import pytesseract
-    from PIL import Image
-    import pymupdf
-    HAS_OCR = True
-except Exception as e:
-    HAS_OCR = False
-    pytesseract = None
-    Image = None
-    pymupdf = None
-    logging.getLogger("AMALDA_API").warning(f"OCR dependencies not available: {e}")
-
-if os.name == 'nt' and HAS_OCR:
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+from app.core.supabase_client import supabase_client
 
 logger = logging.getLogger("AMALDA_API")
 
-from app.core.insforge import insforge
+if os.name == 'nt':
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
 
 class BoundingBox(BaseModel):
     page_number: int
@@ -33,31 +25,34 @@ class BoundingBox(BaseModel):
     x1: float
     y1: float
 
+
 class ParsedNode(BaseModel):
     node_id: str
     text: str
     bounding_box: BoundingBox
     clause_heading: Optional[str] = None
 
+
 class ParsedDocument(BaseModel):
     filename: str
     nodes: List[ParsedNode]
+
 
 class LegalDocumentParser:
     def __init__(self):
         pass
 
     def _perform_ocr_on_page(self, pdf_bytes: bytes, page_index: int) -> str:
-        """OCR a single page with low DPI to fit 512MB RAM. Returns empty if OCR unavailable."""
-        if not HAS_OCR:
-            return ""
+        """OCR with memory limits: DPI set to 150 to survive Render's 512MB RAM limit."""
         try:
             doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
             page = doc.load_page(page_index)
-            pix = page.get_pixmap(dpi=110)  # Low DPI to minimize RAM
+            # Reduced DPI from 300 to 150 (cuts image RAM usage by 75%)
+            pix = page.get_pixmap(dpi=150)
             img = Image.open(io.BytesIO(pix.tobytes()))
             ocr_text = pytesseract.image_to_string(img)
 
+            # Immediate aggressive cleanup
             img.close()
             del img
             del pix
@@ -67,8 +62,8 @@ class LegalDocumentParser:
 
             return ocr_text
         except Exception as e:
-            logger.error(f"OCR failed on page {page_index+1}: {e}")
-            return ""
+            logger.error(f"OCR failed on page {page_index+1}. Error: {e}")
+            return "[OCR FAILED OR UNAVAILABLE]"
 
     def _semantic_chunking(self, pages_data: List[dict], filename: str) -> List[ParsedNode]:
         nodes = []
@@ -123,17 +118,14 @@ class LegalDocumentParser:
         )
 
     def parse_pdf_incrementally(self, file_bytes: bytes, filename: str, vector_db, batch_size=10):
-        job_status = insforge.get_job_status(filename) if 'insforge' in dir() else None
+        job_status = supabase_client.get_job_status(filename)
         start_page = job_status["processed_pages"] if job_status else 0
-        logger.info(f"Starting incremental ingestion for {filename} at page {start_page}...")
+        logger.info(f"Starting resumable ingestion for {filename} at page {start_page}...")
 
         with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
             total_pages = len(pdf)
             if not job_status:
-                try:
-                    insforge.update_job_status(filename, 0, total_pages, 'PROCESSING')
-                except Exception:
-                    pass
+                supabase_client.update_job_status(filename, 0, total_pages, 'PROCESSING')
 
             for i in range(start_page, total_pages, batch_size):
                 end_page = min(i + batch_size, total_pages)
@@ -148,7 +140,7 @@ class LegalDocumentParser:
                         text = self._perform_ocr_on_page(file_bytes, page_num)
 
                     clean_text = text.strip() if text else ""
-                    if clean_text:
+                    if clean_text and clean_text != "[OCR FAILED OR UNAVAILABLE]":
                         batch_has_text = True
 
                     rect = page.rect
@@ -161,32 +153,30 @@ class LegalDocumentParser:
                     page = None
 
                 if not batch_has_text:
-                    logger.warning(f"No readable text in batch {i} to {end_page} from {filename}.")
-                    continue
+                    logger.error(f"SILENT FAILURE DETECTED: No readable text extracted in batch {i} to {end_page} from {filename}.")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Unprocessable Entity: PDF extraction yielded no readable text between pages {i} and {end_page}. OCR failed or document is empty."
+                    )
 
                 nodes = self._semantic_chunking(pages_data, filename)
 
-                class TmpDoc: pass
+                class TmpDoc:
+                    pass
                 tmp = TmpDoc()
                 tmp.filename = filename
                 tmp.nodes = nodes
                 vector_db.index_document(tmp)
 
-                try:
-                    insforge.update_job_status(filename, end_page, total_pages, 'PROCESSING')
-                except Exception:
-                    pass
-                logger.info(f"✅ Checkpoint: Processed pages {i} to {end_page} of {total_pages}")
+                supabase_client.update_job_status(filename, end_page, total_pages, 'PROCESSING')
+                logger.info(f"✅ Checkpoint Saved: Processed pages {i} to {end_page} of {total_pages}")
 
                 del pages_data
                 del nodes
                 del tmp
                 gc.collect()
 
-        try:
-            insforge.update_job_status(filename, total_pages, total_pages, 'COMPLETED')
-        except Exception:
-            pass
+        supabase_client.update_job_status(filename, total_pages, total_pages, 'COMPLETED')
         logger.info(f"✅ Fully completed processing {filename}.")
 
     def parse_pdf(self, file_bytes: bytes, filename: str) -> ParsedDocument:
@@ -203,7 +193,7 @@ class LegalDocumentParser:
                     text = self._perform_ocr_on_page(file_bytes, i)
 
                 clean_text = text.strip() if text else ""
-                if clean_text:
+                if clean_text and clean_text != "[OCR FAILED OR UNAVAILABLE]":
                     document_has_text = True
 
                 rect = page.rect
@@ -216,7 +206,7 @@ class LegalDocumentParser:
                 page = None
 
         if not document_has_text:
-            logger.error(f"No readable text extracted from {filename}.")
+            logger.error(f"SILENT FAILURE DETECTED: No readable text extracted from {filename}.")
             raise HTTPException(
                 status_code=422,
                 detail="Unprocessable Entity: PDF extraction yielded no readable text. Ensure it is a valid document."

@@ -1,5 +1,4 @@
 import os
-import sys
 import uuid
 import logging
 import asyncio
@@ -14,7 +13,9 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# --- 1. LOGGING SETUP (stdout only - Render free tier has no persistent disk) ---
+# --- 1. LOGGING & DB SETUP ---
+os.makedirs("./logs", exist_ok=True)
+
 request_id_context_var = contextvars.ContextVar("request_id", default="SYSTEM")
 
 class RequestIDFilter(logging.Filter):
@@ -25,7 +26,10 @@ class RequestIDFilter(logging.Filter):
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] - [ReqID: %(request_id)s] - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.FileHandler("./logs/amalda_backend.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
 )
 
 for handler in logging.root.handlers:
@@ -33,19 +37,11 @@ for handler in logging.root.handlers:
 
 logger = logging.getLogger("AMALDA_API")
 
-# --- 2. IMPORTS ---
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.db.session import engine, Base, get_db
+from app.db import models  # Ensure all models are registered before create_all
 from app.api.v1.api_router import api_router
-
-# Auto-create all SQLAlchemy tables on startup (Render free tier: fresh DB each deploy)
-def _ensure_tables():
-    try:
-        Base.metadata.create_all(engine)
-        logger.info("🟢 SQLAlchemy tables ensured.")
-    except Exception as e:
-        logger.warning(f"Table creation skipped (DB may already have them): {e}")
 
 from app.retrieval.vector_store import VectorDatabase
 from app.parsers.pdf_parser import LegalDocumentParser
@@ -65,32 +61,27 @@ async def resilient_worker_launcher(app_state):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🟢 STARTUP: Initializing engines securely...")
-    
-    # Ensure SQLAlchemy tables exist (fresh InsForge DB on each Render deploy)
-    _ensure_tables()
-    
-    # Initialize InsForge-backed storage (cloud, not local disk)
+    logger.info("🟢 STARTUP: Initializing Supabase tables and engines...")
+    # Auto-create all SQLAlchemy tables in Supabase PostgreSQL
+    Base.metadata.create_all(bind=engine)
+
     app.state.db = VectorDatabase()
     app.state.parser = LegalDocumentParser()
     app.state.agent_graph = build_agent_graph()
-    
-    # Recover any orphaned processing jobs
+
     sweep_orphaned_tasks()
-    
-    # Start background worker loop
     worker_task = asyncio.create_task(resilient_worker_launcher(app.state))
-    logger.info("🟢 STARTUP: All systems operational.")
-    
+    logger.info("🟢 STARTUP: All cloud systems operational.")
+
     yield
-    
+
     logger.info("🔴 SHUTDOWN: Safely closing engines...")
     worker_task.cancel()
     try:
         await worker_task
     except asyncio.CancelledError:
         pass
-        
+
     app.state.db = None
     app.state.parser = None
     app.state.agent_graph = None
@@ -107,7 +98,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
         token = request_id_context_var.set(request_id)
-        
+
         try:
             response: Response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
@@ -117,11 +108,13 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestIDMiddleware)
 
-# CORS: allow localhost dev + Render frontend URLs (comma-separated env)
-allowed_origins = [origin.strip() for origin in os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://amalda-legal.vercel.app,https://amalda-legal.pages.dev"
-).split(",")]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -136,7 +129,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1")
 
-# --- 6. DEEP HEALTH CHECK ---
+# --- HEALTH CHECK ---
 @app.get("/", include_in_schema=False)
 @app.head("/", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
@@ -151,7 +144,7 @@ async def health_check(db: Session = Depends(get_db)):
             "vector_store": "unknown"
         }
     }
-    
+
     try:
         db.execute(text("SELECT 1"))
         health_status["dependencies"]["sql_database"] = "healthy"
@@ -159,23 +152,21 @@ async def health_check(db: Session = Depends(get_db)):
         logger.error(f"Health Check Failed (SQL): {e}")
         health_status["dependencies"]["sql_database"] = "unhealthy"
         health_status["status"] = "degraded"
-        
+
     try:
         vector_db = app.state.db
-        vector_db.collection.count()
+        vector_db.count()
         health_status["dependencies"]["vector_store"] = "healthy"
     except Exception as e:
         logger.error(f"Health Check Failed (Vector DB): {e}")
         health_status["dependencies"]["vector_store"] = "unhealthy"
         health_status["status"] = "degraded"
-        
+
     if health_status["status"] == "degraded":
         raise HTTPException(status_code=503, detail=health_status)
-        
+
     return health_status
 
 if __name__ == "__main__":
-    # Render free tier: bind to 0.0.0.0, use $PORT env var
-    port = int(os.getenv("PORT", settings.PORT))
-    logger.info(f"🚀 Starting {settings.PROJECT_NAME} API on 0.0.0.0:{port}...")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
+    logger.info(f"🚀 Starting {settings.PROJECT_NAME} API on port {settings.PORT}...")
+    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT)

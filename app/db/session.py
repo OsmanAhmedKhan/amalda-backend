@@ -7,22 +7,24 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("AMALDA_API")
 
-INSFORGE_URL = os.getenv("INSFORGE_DB_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not INSFORGE_URL:
-    raise ValueError("CRITICAL ERROR: INSFORGE_DB_URL is missing.")
+if not DATABASE_URL:
+    raise ValueError("CRITICAL ERROR: DATABASE_URL is missing from environment variables.")
 
-if INSFORGE_URL.startswith("postgresql://"):
-    INSFORGE_URL = INSFORGE_URL.replace("postgresql://", "postgresql+psycopg://")
+# Ensure SQLAlchemy uses psycopg (v3) driver
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# 🔥 RENDER FREE TIER: Small connection pool to fit 512MB RAM
 engine = create_engine(
-    INSFORGE_URL,
-    pool_size=3,
+    DATABASE_URL,
+    pool_size=5,             # Sized safely for Supabase Free (Nano) connection limits
     max_overflow=5,
-    pool_recycle=60,
-    pool_timeout=15,
-    pool_pre_ping=True,
+    pool_recycle=300,        # Recycle idle connections every 5 minutes
+    pool_timeout=30,
+    pool_pre_ping=True,      # Automatically tests & reconnects dropped SSL connections
     connect_args={
         "sslmode": "require",
         "keepalives": 1,
@@ -44,10 +46,10 @@ def get_db():
         try:
             db.rollback()
         except Exception:
-            pass
+            pass  # Swallow rollback errors if connection is already dead
         raise
     finally:
         try:
             db.close()
         except Exception as e:
-            logger.warning(f"Ignored DB close error: {e}")
+            logger.warning(f"Ignored DB close error (Connection likely dropped by Supabase): {e}")
