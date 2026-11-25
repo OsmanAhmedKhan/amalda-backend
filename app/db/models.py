@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -140,3 +140,50 @@ class WorkUnit(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     job = relationship("AnalysisJob", back_populates="work_units")
+
+
+# ---------------------------------------------------------
+# LONG-TERM MEMORY (Persistent on Supabase PostgreSQL)
+# ---------------------------------------------------------
+
+class UserPreference(Base):
+    """
+    User-specific preferences and memory settings.
+    Persists across Render restarts via Supabase PostgreSQL.
+    """
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, unique=True, index=True, nullable=False)
+    display_name = Column(String, nullable=True)
+    preferred_model = Column(String, default="groq")
+    temperature = Column(String, default="0.0")
+    max_chunks_retrieved = Column(Integer, default=6)
+    memory_enabled = Column(String, default="true")
+    auto_summarize = Column(String, default="true")
+    theme = Column(String, default="light")
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class DocumentMemory(Base):
+    """
+    Document-level memory: summary, key clauses, metadata.
+    Survives Render spin-downs so documents are remembered across sessions.
+    """
+    __tablename__ = "document_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, index=True, nullable=False)
+    file_hash = Column(String, index=True, nullable=False)
+    summary = Column(String, nullable=True)
+    key_clauses = Column(String, nullable=True)
+    total_pages = Column(Integer, default=0)
+    total_chunks = Column(Integer, default=0)
+    risk_level = Column(String, nullable=True)
+    last_accessed = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (
+        Index("ix_document_memories_filename_hash", "filename", "file_hash"),
+    )
