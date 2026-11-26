@@ -48,6 +48,7 @@ from app.parsers.pdf_parser import LegalDocumentParser
 from app.agents.graph import build_agent_graph
 from app.workers.db_queue import document_worker_loop, sweep_orphaned_tasks
 
+
 async def resilient_worker_launcher(app_state):
     while True:
         try:
@@ -59,10 +60,10 @@ async def resilient_worker_launcher(app_state):
             logger.error(f"Worker loop crashed fatally: {e}. Restarting in 5s...")
             await asyncio.sleep(5)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🟢 STARTUP: Initializing Supabase tables and engines...")
-    # Auto-create all SQLAlchemy tables in Supabase PostgreSQL
     Base.metadata.create_all(bind=engine)
 
     app.state.db = VectorDatabase()
@@ -86,12 +87,14 @@ async def lifespan(app: FastAPI):
     app.state.parser = None
     app.state.agent_graph = None
 
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Enterprise Backend for Multi-Agent Legal Document Analysis",
     version=settings.VERSION,
     lifespan=lifespan
 )
+
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -105,6 +108,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             request_id_context_var.reset(token)
+
 
 app.add_middleware(RequestIDMiddleware)
 
@@ -129,36 +133,47 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(api_router, prefix="/api/v1")
 
-# --- HEALTH CHECK ---
+
+# --- FAST LIVENESS HEALTH CHECK (Used by Render & UptimeRobot) ---
 @app.get("/", include_in_schema=False)
 @app.head("/", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
 @app.get("/health", summary="Health Check")
-async def health_check(db: Session = Depends(get_db)):
+async def health_check():
+    return {
+        "system": settings.PROJECT_NAME,
+        "version": "v1",
+        "status": "healthy",
+        "ready": app.state.db is not None,
+    }
+
+
+# --- DEEP DEPENDENCY CHECK (Manual Diagnostics Only) ---
+@app.get("/health/deep", summary="Deep Dependency Health Check")
+def deep_health_check(db: Session = Depends(get_db)):
     health_status = {
         "system": settings.PROJECT_NAME,
         "version": "v1",
         "status": "healthy",
         "dependencies": {
             "sql_database": "unknown",
-            "vector_store": "unknown"
-        }
+            "vector_store": "unknown",
+        },
     }
 
     try:
         db.execute(text("SELECT 1"))
         health_status["dependencies"]["sql_database"] = "healthy"
     except Exception as e:
-        logger.error(f"Health Check Failed (SQL): {e}")
+        logger.error(f"Deep Health Check Failed (SQL): {e}")
         health_status["dependencies"]["sql_database"] = "unhealthy"
         health_status["status"] = "degraded"
 
     try:
-        vector_db = app.state.db
-        vector_db.count()
+        app.state.db.count()
         health_status["dependencies"]["vector_store"] = "healthy"
     except Exception as e:
-        logger.error(f"Health Check Failed (Vector DB): {e}")
+        logger.error(f"Deep Health Check Failed (Vector DB): {e}")
         health_status["dependencies"]["vector_store"] = "unhealthy"
         health_status["status"] = "degraded"
 
@@ -166,6 +181,7 @@ async def health_check(db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail=health_status)
 
     return health_status
+
 
 if __name__ == "__main__":
     logger.info(f"🚀 Starting {settings.PROJECT_NAME} API on port {settings.PORT}...")
