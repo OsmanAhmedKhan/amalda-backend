@@ -11,25 +11,31 @@ logger = logging.getLogger("AMALDA_API")
 
 
 class GeminiHTTPEmbeddingFunction:
-    """Lightweight HTTP wrapper for Gemini text-embedding-004 (768 dimensions)."""
+    """Lightweight HTTP wrapper for Gemini gemini-embedding-001 (768 dimensions)."""
     def __init__(self, api_key: str):
+        self.api_key = api_key
         self.url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"text-embedding-004:batchEmbedContents?key={api_key}"
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-embedding-001:batchEmbedContents"
         )
 
     def embed(self, texts: List[str]) -> List[List[float]]:
+        headers = {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
         payload = {
             "requests": [
                 {
-                    "model": "models/text-embedding-004",
-                    "content": {"parts": [{"text": text}]}
+                    "model": "models/gemini-embedding-001",
+                    "content": {"parts": [{"text": text}]},
+                    "outputDimensionality": 768,
                 }
                 for text in texts
             ]
         }
         with httpx.Client() as client:
-            response = client.post(self.url, json=payload, timeout=45.0)
+            response = client.post(self.url, headers=headers, json=payload, timeout=45.0)
             response.raise_for_status()
             data = response.json()
             return [item["values"] for item in data["embeddings"]]

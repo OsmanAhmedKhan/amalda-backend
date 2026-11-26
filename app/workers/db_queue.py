@@ -1,14 +1,8 @@
-import os
 import asyncio
 import logging
 from sqlalchemy import text
 from app.db.session import SessionLocal
-from app.core.config import settings
-
-# Pull file bytes directly from Supabase Private Storage
 from app.core.supabase_client import supabase_client
-
-# Import the Format-Agnostic Registry
 from app.parsers.extractors import registry
 
 logger = logging.getLogger("AMALDA_API")
@@ -18,78 +12,100 @@ def sweep_orphaned_tasks():
     """Crash Recovery: Resets jobs stuck in PROCESSING back to PENDING on startup."""
     db = SessionLocal()
     try:
-        result = db.execute(text("UPDATE document_records SET status = 'PENDING' WHERE status = 'PROCESSING'"))
+        result = db.execute(
+            text("UPDATE document_records SET status = 'PENDING' WHERE status = 'PROCESSING'")
+        )
         db.commit()
         if result.rowcount > 0:
-            logger.warning(f"🧹 CRASH RECOVERY: Reset {result.rowcount} orphaned document(s) back to PENDING.")
+            logger.warning(
+                f"🧹 CRASH RECOVERY: Reset {result.rowcount} orphaned document(s) back to PENDING."
+            )
     except Exception as e:
         logger.error(f"Failed to sweep orphans: {e}")
     finally:
         db.close()
 
 
-async def document_worker_loop(app_state):
-    """Durable, multi-worker safe queue processor using Atomic Postgres locks."""
-    logger.info("⚙️ Background task worker initialized and polling...")
-    while True:
-        db = SessionLocal()
-        try:
-            # Atomic Claim: Only one worker can claim a specific row
-            result = db.execute(text("""
-                UPDATE document_records 
-                SET status = 'PROCESSING' 
+def _poll_and_process_once(app_state) -> bool:
+    """
+    Runs all blocking DB, Storage, PDF parsing, and embedding work inside a worker thread
+    so FastAPI's async event loop and /health endpoint are never blocked.
+    Returns True if a task was processed, False if the queue was empty.
+    """
+    db = SessionLocal()
+    try:
+        result = db.execute(
+            text("""
+                UPDATE document_records
+                SET status = 'PROCESSING'
                 WHERE id = (
-                    SELECT id FROM document_records 
-                    WHERE status = 'PENDING' AND deleted_at IS NULL 
+                    SELECT id FROM document_records
+                    WHERE status = 'PENDING' AND deleted_at IS NULL
                     LIMIT 1
                 )
                 RETURNING id, filename;
-            """))
-            row = result.fetchone()
+            """)
+        )
+        row = result.fetchone()
+        db.commit()
+
+        if not row:
+            return False
+
+        doc_id, filename = row
+        logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename}")
+
+        try:
+            try:
+                file_bytes = supabase_client.get_file_bytes(filename)
+                logger.info(
+                    f"Downloaded {len(file_bytes)} bytes from Supabase Storage for {filename}"
+                )
+            except Exception as storage_err:
+                raise FileNotFoundError(
+                    f"Uploaded file not found in Supabase Storage: {storage_err}"
+                )
+
+            parsed_doc = registry.extract(file_bytes=file_bytes, filename=filename)
+
+            if not parsed_doc or not getattr(parsed_doc, "nodes", None):
+                raise ValueError(f"Document {filename} extracted zero readable text nodes.")
+
+            app_state.db.index_document(parsed_doc)
+
+            db.execute(
+                text(
+                    "UPDATE document_records SET status = 'COMPLETED', error_message = NULL WHERE id = :id"
+                ),
+                {"id": doc_id},
+            )
+            db.commit()
+            logger.info(f"[Worker] ✅ Successfully finished processing {filename}")
+
+        except Exception as e:
+            logger.error(f"[Worker] ❌ Error processing {filename}: {e}", exc_info=True)
+            clean_err = str(e).replace("'", "")
+            db.execute(
+                text(
+                    "UPDATE document_records SET status = 'FAILED', error_message = :err WHERE id = :id"
+                ),
+                {"id": doc_id, "err": clean_err},
+            )
             db.commit()
 
-            if row:
-                doc_id, filename = row
-                logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename}")
+        return True
+    finally:
+        db.close()
 
-                try:
-                    # Download bytes directly from Supabase Private Storage into RAM
-                    try:
-                        file_bytes = supabase_client.get_file_bytes(filename)
-                        logger.info(f"Downloaded {len(file_bytes)} bytes from Supabase Storage for {filename}")
-                    except Exception as storage_err:
-                        raise FileNotFoundError(f"Uploaded file not found in Supabase Storage: {storage_err}")
 
-                    # Format-Agnostic Registry Extraction (Passes bytes instead of file_path)
-                    parsed_doc = registry.extract(file_bytes=file_bytes, filename=filename)
-
-                    # Validate that parsed_doc has actual nodes/content
-                    if not parsed_doc or not getattr(parsed_doc, "nodes", None):
-                        raise ValueError(f"Document {filename} extracted zero readable text nodes.")
-
-                    app_state.db.index_document(parsed_doc)
-
-                    # Explicitly update status to COMPLETED and clear previous errors
-                    db.execute(
-                        text("UPDATE document_records SET status = 'COMPLETED', error_message = NULL WHERE id = :id"),
-                        {"id": doc_id}
-                    )
-                    db.commit()
-                    logger.info(f"[Worker] ✅ Successfully finished processing {filename}")
-
-                except Exception as e:
-                    logger.error(f"[Worker] ❌ Error processing {filename}: {e}", exc_info=True)
-                    clean_err = str(e).replace("'", "")
-                    db.execute(
-                        text("UPDATE document_records SET status = 'FAILED', error_message = :err WHERE id = :id"),
-                        {"id": doc_id, "err": clean_err}
-                    )
-                    db.commit()
-            else:
-                # No tasks found, sleep before polling again
-                await asyncio.sleep(2)
+async def document_worker_loop(app_state):
+    """Durable, non-blocking background queue processor."""
+    logger.info("⚙️ Background task worker initialized and polling...")
+    while True:
+        try:
+            processed = await asyncio.to_thread(_poll_and_process_once, app_state)
+            if not processed:
+                await asyncio.sleep(4)
         except Exception as e:
             logger.error(f"[Worker] Queue polling error: {e}")
             await asyncio.sleep(5)
-        finally:
-            db.close()
