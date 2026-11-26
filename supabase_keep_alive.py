@@ -9,8 +9,17 @@ logger = logging.getLogger("Supabase_KeepAlive")
 load_dotenv()
 
 
+def normalize_db_url(raw_url: str) -> str:
+    url = (raw_url or "").strip().strip('"').strip("'")
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://") and "+psycopg" not in url:
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def ping_database():
-    db_url = os.environ.get("DATABASE_URL")
+    db_url = normalize_db_url(os.environ.get("DATABASE_URL", ""))
     if not db_url:
         logger.error("Missing DATABASE_URL environment variable.")
         sys.exit(1)

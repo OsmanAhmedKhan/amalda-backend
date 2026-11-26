@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install SQLAlchemy psycopg2-binary python-dotenv
+        run: pip install SQLAlchemy "psycopg[binary]" python-dotenv
 
       - name: Ping Supabase PostgreSQL
         env:
