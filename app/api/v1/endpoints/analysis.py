@@ -2,16 +2,17 @@ import asyncio
 import json
 import time
 import logging
-from typing import AsyncGenerator, Any
-from fastapi import APIRouter, HTTPException, Request, Depends
+from typing import AsyncGenerator, Any, Optional
+from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from app.core.security import get_current_user
 from app.schemas.api_models import AnalysisResponse
 from app.core.rate_limit import limiter
-from app.db.session import SessionLocal
-from app.db.models import ChatMessage, QueryAudit
+from app.db.session import SessionLocal, get_db
+from app.db.models import ConversationThread, ChatMessage, QueryAudit
 from app.services.memory_service import memory_service
 
 logger = logging.getLogger("AMALDA_API")
@@ -43,9 +44,28 @@ def _retrieve_context_and_history(
     Retrieve per-user RAG evidence + short-term thread history + long-term cross-thread memory.
     Runs inside a worker thread so it never blocks FastAPI's event loop.
     """
+    target_docs = [d for d in (document_ids or []) if d and str(d).strip()]
+    doc_title = target_docs[0] if target_docs else "General Legal Conversation"
+
     db: Session = SessionLocal()
     try:
-        thread = memory_service.get_or_create_thread(db, user_id=user_id, thread_id=thread_id)
+        # If no thread_id was sent, reuse the latest thread for this user + document
+        if not thread_id and target_docs:
+            existing_thread = (
+                db.query(ConversationThread)
+                .filter(
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.title == doc_title,
+                )
+                .order_by(desc(ConversationThread.updated_at))
+                .first()
+            )
+            if existing_thread:
+                thread_id = existing_thread.id
+
+        thread = memory_service.get_or_create_thread(
+            db, user_id=user_id, thread_id=thread_id, title=doc_title
+        )
         thread_id = thread.id
 
         recent = memory_service.get_recent_messages(db, thread_id, limit=6)
@@ -62,7 +82,6 @@ def _retrieve_context_and_history(
 
     evidence_chunks = []
     sources_payload = []
-    target_docs = [d for d in (document_ids or []) if d and str(d).strip()]
     doc_filter = target_docs if target_docs else None
 
     try:
@@ -120,7 +139,11 @@ def _retrieve_context_and_history(
 
 
 def _record_audit_and_messages(
-    thread_id: str, query: str, final_state: dict, duration_ms: int
+    thread_id: str,
+    query: str,
+    final_state: dict,
+    duration_ms: int,
+    rich_payload: Optional[dict] = None,
 ):
     db = SessionLocal()
     try:
@@ -131,7 +154,7 @@ def _record_audit_and_messages(
             thread_id=thread_id,
             role="ai",
             content=_extract_text(final_state.get("final_verdict", "")),
-            citations=json.dumps([]),
+            citations=json.dumps(rich_payload or {}),
         )
         db.add(ai_msg)
 
@@ -150,6 +173,54 @@ def _record_audit_and_messages(
         logger.error(f"Failed to save audit records: {e}")
     finally:
         db.close()
+
+
+@router.get("/history")
+def get_analysis_history(
+    document_id: str = Query(..., description="Document filename to load history for"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Restores the user's persistent conversation history and audit cards for a document."""
+    user_id = current_user["user_id"]
+    thread = (
+        db.query(ConversationThread)
+        .filter(
+            ConversationThread.user_id == user_id,
+            ConversationThread.title == document_id,
+        )
+        .order_by(desc(ConversationThread.updated_at))
+        .first()
+    )
+
+    if not thread:
+        return {"thread_id": None, "messages": []}
+
+    rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.thread_id == thread.id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+
+    history = []
+    for row in rows:
+        role = "assistant" if row.role == "ai" else "user"
+        item: dict[str, Any] = {
+            "id": str(row.id),
+            "role": role,
+            "content": row.content,
+        }
+        if role == "assistant" and row.citations:
+            try:
+                meta = json.loads(row.citations)
+                if isinstance(meta, dict):
+                    item.update(meta)
+            except Exception:
+                pass
+        history.append(item)
+
+    return {"thread_id": thread.id, "messages": history}
 
 
 @router.post("/", response_model=AnalysisResponse)
@@ -194,7 +265,12 @@ async def analyze_query(
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         await asyncio.to_thread(
-            _record_audit_and_messages, thread_id, query_str, final_state, duration_ms
+            _record_audit_and_messages,
+            thread_id,
+            query_str,
+            final_state,
+            duration_ms,
+            {"sources": sources, "isRiskReport": not request_data.get("is_deep_dive", True)},
         )
 
         response_data = {
@@ -312,11 +388,6 @@ async def analyze_query_stream(
 
             await stream_task
 
-            duration_ms = int((time.perf_counter() - start_time) * 1000)
-            await asyncio.to_thread(
-                _record_audit_and_messages, thread_id, query_str, final_state, duration_ms
-            )
-
             complete_payload = {
                 "thread_id": thread_id,
                 "query": query_str,
@@ -342,6 +413,18 @@ async def analyze_query_stream(
                 "sources": sources,
                 "isRiskReport": not is_deep_dive,
             }
+
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            rich_meta = {k: v for k, v in complete_payload.items() if k not in ("query", "retrieved_evidence", "final_verdict")}
+            await asyncio.to_thread(
+                _record_audit_and_messages,
+                thread_id,
+                query_str,
+                final_state,
+                duration_ms,
+                rich_meta,
+            )
+
             yield f"event: complete\ndata: {json.dumps(complete_payload)}\n\n"
 
         except Exception as e:
