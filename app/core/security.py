@@ -18,7 +18,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 jwks_client = PyJWKClient(settings.SUPABASE_JWKS_URL)
 
 
-async def verify_api_key(api_key: str = Security(api_key_header)):
+def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key != API_KEY:
         logger.warning("🚨 SECURITY ALERT: Unauthorized API key attempt.")
         raise HTTPException(
@@ -28,7 +28,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
     return api_key
 
 
-async def get_current_user(
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
 ) -> dict:
     """

@@ -30,7 +30,6 @@ def _poll_and_process_once(app_state) -> bool:
     """
     Runs all blocking DB, Storage, PDF parsing, and embedding work inside a worker thread
     so FastAPI's async event loop and /health endpoint are never blocked.
-    Returns True if a task was processed, False if the queue was empty.
     """
     db = SessionLocal()
     try:
@@ -43,7 +42,7 @@ def _poll_and_process_once(app_state) -> bool:
                     WHERE status = 'PENDING' AND deleted_at IS NULL
                     LIMIT 1
                 )
-                RETURNING id, filename;
+                RETURNING id, filename, user_id;
             """)
         )
         row = result.fetchone()
@@ -52,12 +51,12 @@ def _poll_and_process_once(app_state) -> bool:
         if not row:
             return False
 
-        doc_id, filename = row
-        logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename}")
+        doc_id, filename, user_id = row
+        logger.info(f"[Worker] 🚀 Claimed document parsing task: {filename} (user={user_id})")
 
         try:
             try:
-                file_bytes = supabase_client.get_file_bytes(filename)
+                file_bytes = supabase_client.get_file_bytes(filename, user_id=user_id)
                 logger.info(
                     f"Downloaded {len(file_bytes)} bytes from Supabase Storage for {filename}"
                 )
@@ -71,7 +70,7 @@ def _poll_and_process_once(app_state) -> bool:
             if not parsed_doc or not getattr(parsed_doc, "nodes", None):
                 raise ValueError(f"Document {filename} extracted zero readable text nodes.")
 
-            app_state.db.index_document(parsed_doc)
+            app_state.db.index_document(parsed_doc, user_id=user_id)
 
             db.execute(
                 text(

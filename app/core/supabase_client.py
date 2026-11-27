@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 import httpx
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -10,7 +11,7 @@ logger = logging.getLogger("AMALDA_API")
 class SupabaseClient:
     """
     Stateless Managed Infrastructure Layer for Supabase.
-    Uses PostgreSQL (Session Pooler) + Supabase Private Storage REST API via httpx.
+    Uses PostgreSQL (Session Pooler) + per-user namespaced Private Storage via httpx.
     """
     def __init__(self):
         if not settings.DATABASE_URL or not settings.SUPABASE_URL or not settings.SUPABASE_SECRET_KEY:
@@ -51,13 +52,23 @@ class SupabaseClient:
     def get_db_connection(self):
         return psycopg2.connect(settings.DATABASE_URL, cursor_factory=DictCursor)
 
+    @staticmethod
+    def _object_path(filename: str, user_id: Optional[str] = None) -> str:
+        return f"{user_id}/{filename}" if user_id else filename
+
     # ---------------------------------------------------------
-    # SUPABASE PRIVATE STORAGE (REST API via httpx)
+    # SUPABASE PRIVATE STORAGE (Per-User Namespaced REST API)
     # ---------------------------------------------------------
 
-    def save_file_bytes(self, filename: str, file_bytes: bytes, content_type: str = "application/pdf") -> str:
-        """Uploads file bytes directly from memory into Supabase Private Storage."""
-        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{filename}"
+    def save_file_bytes(
+        self,
+        filename: str,
+        file_bytes: bytes,
+        content_type: str = "application/pdf",
+        user_id: Optional[str] = None,
+    ) -> str:
+        path = self._object_path(filename, user_id)
+        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{path}"
         headers = {
             **self.headers,
             "Content-Type": content_type,
@@ -66,20 +77,19 @@ class SupabaseClient:
         with httpx.Client(timeout=60.0) as client:
             resp = client.post(url, content=file_bytes, headers=headers)
             resp.raise_for_status()
-        return f"supabase://{self.bucket}/{filename}"
+        return f"supabase://{self.bucket}/{path}"
 
-    def get_file_bytes(self, filename: str) -> bytes:
-        """Downloads file bytes directly into memory from Supabase Private Storage."""
-        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{filename}"
+    def get_file_bytes(self, filename: str, user_id: Optional[str] = None) -> bytes:
+        path = self._object_path(filename, user_id)
+        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{path}"
         with httpx.Client(timeout=60.0) as client:
             resp = client.get(url, headers=self.headers)
             resp.raise_for_status()
             return resp.content
 
-    def list_files(self) -> set:
-        """Lists all filenames currently stored in the Supabase bucket."""
+    def list_files(self, user_id: Optional[str] = None) -> set:
         url = f"{self.base_url}/storage/v1/object/list/{self.bucket}"
-        payload = {"prefix": "", "limit": 1000, "offset": 0}
+        payload = {"prefix": f"{user_id}" if user_id else "", "limit": 1000, "offset": 0}
         try:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.post(url, json=payload, headers=self.headers)
@@ -90,19 +100,21 @@ class SupabaseClient:
             logger.error(f"Failed to list files in Supabase Storage: {e}")
             return set()
 
-    def delete_file(self, filename: str):
-        """Safely removes the file from Supabase Private Storage."""
-        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{filename}"
+    def delete_file(self, filename: str, user_id: Optional[str] = None):
+        path = self._object_path(filename, user_id)
+        url = f"{self.base_url}/storage/v1/object/{self.bucket}/{path}"
         try:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.delete(url, headers=self.headers)
                 resp.raise_for_status()
         except Exception as e:
-            logger.error(f"Failed to delete {filename} from Supabase Storage: {e}")
+            logger.error(f"Failed to delete {path} from Supabase Storage: {e}")
 
-    def generate_presigned_url(self, filename: str, expires_in: int = 3600) -> str:
-        """Generates a temporary signed URL for a private file."""
-        url = f"{self.base_url}/storage/v1/object/sign/{self.bucket}/{filename}"
+    def generate_presigned_url(
+        self, filename: str, expires_in: int = 3600, user_id: Optional[str] = None
+    ) -> str:
+        path = self._object_path(filename, user_id)
+        url = f"{self.base_url}/storage/v1/object/sign/{self.bucket}/{path}"
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(url, json={"expiresIn": expires_in}, headers=self.headers)
             resp.raise_for_status()

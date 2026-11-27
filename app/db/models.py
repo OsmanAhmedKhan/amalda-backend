@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -27,7 +27,7 @@ class WorkUnitStatus(str, enum.Enum):
 
 
 # ---------------------------------------------------------
-# CORE TABLES (With Supabase User Ownership)
+# CORE TABLES (Per-User Multi-Tenant Ownership)
 # ---------------------------------------------------------
 
 class DocumentRecord(Base):
@@ -35,7 +35,7 @@ class DocumentRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True, nullable=True)  # Supabase auth.users UUID
-    filename = Column(String, unique=True, index=True, nullable=False)
+    filename = Column(String, index=True, nullable=False)
     file_hash = Column(String, unique=True, index=True, nullable=False)
     status = Column(Enum(DocStatus), default=DocStatus.PENDING)
     error_message = Column(String, nullable=True)
@@ -45,6 +45,10 @@ class DocumentRecord(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
     jobs = relationship("AnalysisJob", back_populates="document", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "filename", name="uq_document_records_user_filename"),
+    )
 
 
 class ConversationThread(Base):
@@ -143,14 +147,10 @@ class WorkUnit(Base):
 
 
 # ---------------------------------------------------------
-# LONG-TERM MEMORY (Persistent on Supabase PostgreSQL)
+# LONG-TERM MEMORY (Persistent per-user on Supabase PostgreSQL)
 # ---------------------------------------------------------
 
 class UserPreference(Base):
-    """
-    User-specific preferences and memory settings.
-    Persists across Render restarts via Supabase PostgreSQL.
-    """
     __tablename__ = "user_preferences"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -167,13 +167,10 @@ class UserPreference(Base):
 
 
 class DocumentMemory(Base):
-    """
-    Document-level memory: summary, key clauses, metadata.
-    Survives Render spin-downs so documents are remembered across sessions.
-    """
     __tablename__ = "document_memories"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=True)  # Supabase auth.users UUID
     filename = Column(String, index=True, nullable=False)
     file_hash = Column(String, index=True, nullable=False)
     summary = Column(String, nullable=True)
@@ -185,5 +182,5 @@ class DocumentMemory(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     __table_args__ = (
-        Index("ix_document_memories_filename_hash", "filename", "file_hash"),
+        Index("ix_document_memories_user_filename_hash", "user_id", "filename", "file_hash"),
     )

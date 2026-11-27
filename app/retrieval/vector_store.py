@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import httpx
 import psycopg2
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 from app.core.config import settings
 
@@ -43,8 +43,8 @@ class GeminiHTTPEmbeddingFunction:
 
 class VectorDatabase:
     """
-    100% Persistent Cloud Vector Store powered by Supabase PostgreSQL + pgvector.
-    Replaces local ChromaDB to survive Render restarts and save >200MB RAM.
+    100% Persistent Multi-Tenant Cloud Vector Store powered by Supabase PostgreSQL + pgvector.
+    Every vector chunk is strictly scoped by user_id.
     """
     def __init__(self):
         gemini_key = os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY
@@ -63,20 +63,22 @@ class VectorDatabase:
         ddl = """
         CREATE TABLE IF NOT EXISTS document_chunks (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             filename TEXT NOT NULL,
             page_number INTEGER DEFAULT 1,
             content TEXT NOT NULL,
             embedding extensions.vector(768),
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
-        CREATE INDEX IF NOT EXISTS idx_document_chunks_filename
-            ON document_chunks (filename);
+        ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS user_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_document_chunks_user_filename
+            ON document_chunks (user_id, filename);
         """
         with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(ddl)
             conn.commit()
-        logger.info("🟢 Initialized Supabase pgvector table: document_chunks")
+        logger.info("🟢 Initialized Supabase pgvector table: document_chunks (multi-tenant)")
 
     def count(self) -> int:
         with self._get_conn() as conn:
@@ -84,16 +86,29 @@ class VectorDatabase:
                 cur.execute("SELECT COUNT(*) FROM document_chunks")
                 return cur.fetchone()[0]
 
-    def get_chunks_by_filename(self, filename: str) -> List[Dict[str, Any]]:
-        query = """
-            SELECT id, content, page_number, filename
-            FROM document_chunks
-            WHERE filename = %s
-            ORDER BY page_number ASC
-        """
+    def get_chunks_by_filename(
+        self, filename: str, user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        if user_id:
+            query = """
+                SELECT id, content, page_number, filename
+                FROM document_chunks
+                WHERE user_id = %s AND filename = %s
+                ORDER BY page_number ASC
+            """
+            params = (user_id, filename)
+        else:
+            query = """
+                SELECT id, content, page_number, filename
+                FROM document_chunks
+                WHERE filename = %s
+                ORDER BY page_number ASC
+            """
+            params = (filename,)
+
         with self._get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (filename,))
+                cur.execute(query, params)
                 rows = cur.fetchall()
         return [
             {
@@ -104,12 +119,13 @@ class VectorDatabase:
             for r in rows
         ]
 
-    def index_document(self, parsed_doc) -> None:
+    def index_document(self, parsed_doc, user_id: Optional[str] = None) -> None:
         ids, documents, page_nums = [], [], []
+        prefix = f"{user_id}_" if user_id else ""
 
         for idx, node in enumerate(parsed_doc.nodes):
-            chunk_id = getattr(node, "node_id", f"{parsed_doc.filename}_chunk_{idx}")
-            ids.append(chunk_id)
+            raw_id = getattr(node, "node_id", f"{parsed_doc.filename}_chunk_{idx}")
+            ids.append(f"{prefix}{raw_id}")
             documents.append(node.text)
 
             page_num = 1
@@ -123,9 +139,10 @@ class VectorDatabase:
 
         batch_size = 50
         insert_sql = """
-            INSERT INTO document_chunks (id, filename, page_number, content, embedding)
-            VALUES (%s, %s, %s, %s, %s::extensions.vector)
+            INSERT INTO document_chunks (id, user_id, filename, page_number, content, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s::extensions.vector)
             ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
                 content = EXCLUDED.content,
                 embedding = EXCLUDED.embedding
         """
@@ -141,13 +158,27 @@ class VectorDatabase:
                         embeddings,
                     ):
                         vec_str = "[" + ",".join(str(x) for x in vec) + "]"
-                        cur.execute(insert_sql, (cid, parsed_doc.filename, pnum, text_val, vec_str))
+                        cur.execute(
+                            insert_sql,
+                            (cid, user_id, parsed_doc.filename, pnum, text_val, vec_str),
+                        )
             conn.commit()
 
-    def delete_document_embeddings(self, filename: str) -> int:
+    def delete_document_embeddings(
+        self, filename: str, user_id: Optional[str] = None
+    ) -> int:
         with self._get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM document_chunks WHERE filename = %s", (filename,))
+                if user_id:
+                    cur.execute(
+                        "DELETE FROM document_chunks WHERE user_id = %s AND filename = %s",
+                        (user_id, filename),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM document_chunks WHERE filename = %s",
+                        (filename,),
+                    )
                 deleted = cur.rowcount
             conn.commit()
         return deleted
@@ -155,6 +186,7 @@ class VectorDatabase:
     def search(
         self,
         query: str,
+        user_id: Optional[str] = None,
         document_ids: List[str] = None,
         n_results: int = 10,
         lambda_mult: float = 0.5,
@@ -163,29 +195,31 @@ class VectorDatabase:
         query_vec = self.embedding_fn.embed([query])[0]
         vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
 
+        conditions = []
+        params: List[Any] = [vec_str]
+
+        if user_id:
+            conditions.append("user_id = %s")
+            params.append(user_id)
         if document_ids and len(document_ids) > 0:
-            sql = """
-                SELECT id, content, filename, page_number,
-                       (embedding OPERATOR(extensions.<=>) %s::extensions.vector) AS distance
-                FROM document_chunks
-                WHERE filename = ANY(%s)
-                ORDER BY distance ASC
-                LIMIT %s
-            """
-            params = (vec_str, document_ids, pool_size)
-        else:
-            sql = """
-                SELECT id, content, filename, page_number,
-                       (embedding OPERATOR(extensions.<=>) %s::extensions.vector) AS distance
-                FROM document_chunks
-                ORDER BY distance ASC
-                LIMIT %s
-            """
-            params = (vec_str, pool_size)
+            conditions.append("filename = ANY(%s)")
+            params.append(document_ids)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(pool_size)
+
+        sql = f"""
+            SELECT id, content, filename, page_number,
+                   (embedding OPERATOR(extensions.<=>) %s::extensions.vector) AS distance
+            FROM document_chunks
+            {where_clause}
+            ORDER BY distance ASC
+            LIMIT %s
+        """
 
         with self._get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, params)
+                cur.execute(sql, tuple(params))
                 rows = cur.fetchall()
 
         if not rows:
