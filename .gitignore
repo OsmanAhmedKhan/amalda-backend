@@ -24,10 +24,12 @@ env/
 !.env.example
 
 # ---------------------------------------------------
-# Persistence, State & Logs
+# Persistence, State, Benchmarks & Logs
 # ---------------------------------------------------
 data/
 logs/
+chroma_storage/
+benchmarks/data/
 *.db
 *.db-shm
 *.db-wal

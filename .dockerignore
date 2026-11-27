@@ -6,14 +6,20 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
 venv/
 env/
 .pytest_cache/
 
-# Local Data and Logs (we mount these externally)
+# Local Data, Benchmarks & Logs
 data/
 logs/
+chroma_storage/
+benchmarks/
+research_evidence/
+tests/
 alembic/versions/*.pyc
 
 # Secrets
 .env
+.env.*
